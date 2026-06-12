@@ -101,6 +101,7 @@ export default function NewClient() {
           onChange={handleChange}
           placeholder="Ej: Juan Pérez"
           Icon={User}
+          autoCapitalize="words"
         />
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -187,7 +188,7 @@ export default function NewClient() {
   )
 }
 
-function Field({ label, name, value, onChange, placeholder, type = 'text', Icon, textarea }) {
+function Field({ label, name, value, onChange, placeholder, type = 'text', Icon, textarea, autoCapitalize }) {
   const baseCls = "w-full border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 rounded-xl pl-10 pr-3 py-3 text-gray-800 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
 
   return (
@@ -199,7 +200,7 @@ function Field({ label, name, value, onChange, placeholder, type = 'text', Icon,
         )}
         {textarea
           ? <textarea name={name} value={value || ''} onChange={onChange} placeholder={placeholder} className={`${baseCls} resize-none`} rows={3} />
-          : <input name={name} value={value || ''} onChange={onChange} placeholder={placeholder} type={type} className={baseCls} />
+          : <input name={name} value={value || ''} onChange={onChange} placeholder={placeholder} type={type} autoCapitalize={autoCapitalize} className={baseCls} />
         }
       </div>
     </div>

@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, NavLink, Navigate } from 'react-router-dom'
 import Dashboard from './pages/Dashboard'
 import Clients from './pages/Clients'
 import NewLoan from './pages/NewLoan'
@@ -13,6 +13,7 @@ import More from './pages/More'
 import Login from './pages/Login'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { CreditCard } from 'lucide-react'
+import { useInactivity } from './hooks/useInactivity'
 
 const HomeIcon = ({ filled }) => (
   <svg width="22" height="22" viewBox="0 0 24 24" fill={filled ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2">
@@ -42,7 +43,7 @@ const CollectIcon = ({ filled }) => (
   </svg>
 )
 
-const MoreIcon = ({ filled }) => (
+const MoreIcon = () => (
   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
     <circle cx="5" cy="12" r="1.5" fill="currentColor" />
     <circle cx="12" cy="12" r="1.5" fill="currentColor" />
@@ -53,7 +54,7 @@ const MoreIcon = ({ filled }) => (
 function BottomNav() {
   const base = "flex flex-col items-center gap-0.5 text-[11px] pt-2 pb-1 px-3 transition-colors"
   const active = "text-blue-400 font-semibold"
-  const inactive = "text-gray-500 dark:text-gray-500"
+  const inactive = "text-gray-500"
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700 flex justify-around z-50">
@@ -76,13 +77,12 @@ function BottomNav() {
   )
 }
 
-// Rutas protegidas — solo si hay sesión
 function AppRoutes() {
   useTheme()
-  const { user } = useAuth()
+  useInactivity(5) // cierra sesión tras 5 min de inactividad
+  const { user, redirecting } = useAuth()
 
-  // Cargando sesión
-  if (user === undefined) return (
+  if (user === undefined || redirecting) return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center">
       <div className="text-center">
         <div className="w-12 h-12 rounded-2xl mx-auto mb-3 flex items-center justify-center"
@@ -93,11 +93,10 @@ function AppRoutes() {
       </div>
     </div>
   )
+  // ...resto igual
 
-  // No autenticado → Login
   if (user === null) return <Login />
 
-  // Autenticado → app completa
   return (
     <div className="max-w-md mx-auto min-h-screen bg-gray-50 dark:bg-gray-950 pb-16">
       <Routes>
@@ -112,6 +111,7 @@ function AppRoutes() {
         <Route path="/clients/:id/detail" element={<ClientDetail />} />
         <Route path="/more" element={<More />} />
         <Route path="/reports" element={<Reports />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       <BottomNav />
     </div>
