@@ -82,11 +82,11 @@ function AppRoutes() {
 
   // Cargando sesión
   if (user === undefined) return (
-    <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
       <div className="text-center">
         <div className="w-12 h-12 rounded-2xl mx-auto mb-3 flex items-center justify-center"
           style={{ background: 'linear-gradient(135deg, #3b5bdb 0%, #7048e8 100%)' }}>
-          <span className="text-xl">💸</span>
+          <CreditCard size={20} color="white" />
         </div>
         <p className="text-gray-400 text-sm">Cargando...</p>
       </div>
