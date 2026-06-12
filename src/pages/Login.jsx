@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { CreditCard } from 'lucide-react'
 import { supabase } from '../db/supabase'
 
 export default function Login() {
@@ -16,16 +17,16 @@ export default function Login() {
     }
 
     return (
-        <div className="min-h-screen bg-gray-900 flex items-center justify-center px-6">
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center px-6">
             <div className="w-full max-w-sm">
                 {/* Logo / título */}
                 <div className="text-center mb-8">
                     <div className="w-16 h-16 rounded-2xl mx-auto mb-4 flex items-center justify-center"
                         style={{ background: 'linear-gradient(135deg, #3b5bdb 0%, #7048e8 100%)' }}>
-                        <span className="text-2xl">💸</span>
+                        <CreditCard size={28} color="white" strokeWidth={2} />
                     </div>
-                    <h1 className="text-2xl font-bold text-white">LoanLedger</h1>
-                    <p className="text-sm text-gray-400 mt-1">Inicia sesión para continuar</p>
+                    <h1 className="text-2xl font-bold text-gray-900">LoanLedger</h1>
+                    <p className="text-sm text-gray-500 mt-1">Inicia sesión para continuar</p>
                 </div>
 
                 {/* Form */}
@@ -35,7 +36,7 @@ export default function Login() {
                         placeholder="Correo electrónico"
                         value={email}
                         onChange={e => setEmail(e.target.value)}
-                        className="w-full bg-gray-800 border border-gray-700 rounded-2xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="w-full bg-white border border-gray-200 rounded-2xl px-4 py-3 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                     <input
                         type="password"
@@ -43,9 +44,9 @@ export default function Login() {
                         value={password}
                         onChange={e => setPassword(e.target.value)}
                         onKeyDown={e => e.key === 'Enter' && handleLogin()}
-                        className="w-full bg-gray-800 border border-gray-700 rounded-2xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="w-full bg-white border border-gray-200 rounded-2xl px-4 py-3 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
-                    {error && <p className="text-sm text-red-400 text-center">{error}</p>}
+                    {error && <p className="text-sm text-red-500 text-center">{error}</p>}
                     <button
                         onClick={handleLogin}
                         disabled={loading || !email || !password}
