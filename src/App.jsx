@@ -12,6 +12,7 @@ import ClientDetail from './pages/ClientDetail'
 import More from './pages/More'
 import Login from './pages/Login'
 import { AuthProvider, useAuth } from './context/AuthContext'
+import { CreditCard } from 'lucide-react'
 
 const HomeIcon = ({ filled }) => (
   <svg width="22" height="22" viewBox="0 0 24 24" fill={filled ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2">
