@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { db } from '../db/db'
+import { supabase } from '../db/supabase'
+import {
+  ChevronLeft, User, IdCard, MapPin, FileText, Info, ArrowRight, Save,
+} from 'lucide-react'
 
 const empty = { name: '', phone: '', cedula: '', address: '', notes: '' }
 
@@ -11,10 +14,12 @@ export default function NewClient() {
   const isEditing = !!id
   const [form, setForm] = useState(empty)
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
 
   useEffect(() => {
     if (isEditing) {
-      db.clients.get(Number(id)).then(c => { if (c) setForm(c) })
+      supabase.from('clients').select('*').eq('id', id).single()
+        .then(({ data }) => { if (data) setForm(data) })
     }
   }, [id])
 
@@ -24,56 +29,179 @@ export default function NewClient() {
 
   async function handleSubmit() {
     if (!form.name || !form.phone) {
-      alert('Nombre y teléfono son obligatorios.')
+      setError('Nombre y teléfono son obligatorios.')
       return
     }
+    setError('')
     setSaving(true)
+
     if (isEditing) {
-      await db.clients.update(Number(id), form)
+      const { error } = await supabase.from('clients').update({
+        name: form.name,
+        phone: form.phone,
+        cedula: form.cedula,
+        address: form.address,
+        notes: form.notes,
+      }).eq('id', id)
+
+      setSaving(false)
+      if (error) { setError(error.message); return }
       navigate('/clients')
     } else {
-      const newId = await db.clients.add({ ...form, createdAt: new Date().toISOString(), status: 'active' })
+      const { data: { user } } = await supabase.auth.getUser()
+
+      const { data, error } = await supabase.from('clients').insert({
+        user_id: user?.id,
+        name: form.name,
+        phone: form.phone,
+        cedula: form.cedula,
+        address: form.address,
+        notes: form.notes,
+        status: 'active',
+      }).select().single()
+
+      setSaving(false)
+      if (error) { setError(error.message); return }
+
       const fromLoan = searchParams.get('from') === 'loan'
-      navigate(fromLoan ? `/new-loan?clientId=${newId}` : '/clients')
+      navigate(fromLoan ? `/new-loan?clientId=${data.id}` : '/clients')
     }
-    setSaving(false)
   }
 
   return (
-    <div className="p-4">
-      <div className="flex items-center gap-3 mb-6">
-        <button onClick={() => navigate(-1)} className="text-blue-500 text-lg">←</button>
-        <h1 className="text-2xl font-bold text-gray-800 dark:text-white">{isEditing ? 'Editar Cliente' : 'Nuevo Cliente'}</h1>
+    <div className="p-4 pb-24 bg-gray-50 dark:bg-gray-900 min-h-screen">
+      {/* Header */}
+      <div className="flex items-center gap-3 mb-1">
+        <button onClick={() => navigate(-1)} className="text-blue-500 dark:text-blue-400">
+          <ChevronLeft size={26} />
+        </button>
+        <div>
+          <h1 className="text-2xl font-bold text-gray-800 dark:text-white">
+            {isEditing ? 'Editar cliente' : 'Nuevo cliente'}
+          </h1>
+          <p className="text-sm text-gray-400">
+            {isEditing ? 'Actualiza la información del cliente' : 'Completa la información del cliente'}
+          </p>
+        </div>
       </div>
 
-      <section className="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm mb-4 space-y-3">
-        <Field label="Nombre completo *" name="name" value={form.name} onChange={handleChange} placeholder="Ej: Juan Pérez" />
-        <Field label="Teléfono *" name="phone" value={form.phone} onChange={handleChange} placeholder="Ej: 3001234567" type="tel" />
-        <Field label="Cédula" name="cedula" value={form.cedula} onChange={handleChange} placeholder="Ej: 1234567890" />
-        <Field label="Dirección" name="address" value={form.address} onChange={handleChange} placeholder="Ej: Cra 5 #10-20" />
-        <Field label="Notas" name="notes" value={form.notes} onChange={handleChange} placeholder="Observaciones..." textarea />
+      {/* Card: Información personal */}
+      <section className="bg-white dark:bg-gray-800 rounded-2xl p-5 shadow-sm mt-5 space-y-4">
+        <div className="flex items-center gap-2 mb-1">
+          <div className="w-9 h-9 rounded-full bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center">
+            <User size={18} className="text-blue-500" />
+          </div>
+          <h2 className="font-bold text-gray-800 dark:text-gray-100">Información personal</h2>
+        </div>
+
+        <Field
+          label="Nombre completo *"
+          name="name"
+          value={form.name}
+          onChange={handleChange}
+          placeholder="Ej: Juan Pérez"
+          Icon={User}
+        />
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Field
+            label="Teléfono *"
+            name="phone"
+            value={form.phone}
+            onChange={handleChange}
+            placeholder="Ej: 3001234567"
+            type="tel"
+            Icon={IdCard}
+          />
+          <Field
+            label="Cédula"
+            name="cedula"
+            value={form.cedula}
+            onChange={handleChange}
+            placeholder="Ej: 1234567890"
+            Icon={IdCard}
+          />
+        </div>
       </section>
 
+      {/* Card: Información adicional */}
+      <section className="bg-white dark:bg-gray-800 rounded-2xl p-5 shadow-sm mt-4 space-y-4">
+        <div className="flex items-center gap-2 mb-1">
+          <div className="w-9 h-9 rounded-full bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center">
+            <MapPin size={18} className="text-blue-500" />
+          </div>
+          <h2 className="font-bold text-gray-800 dark:text-gray-100">Información adicional</h2>
+        </div>
+
+        <Field
+          label="Dirección"
+          name="address"
+          value={form.address}
+          onChange={handleChange}
+          placeholder="Ej: Cra 5 #10-20"
+          Icon={MapPin}
+        />
+
+        <Field
+          label="Notas"
+          name="notes"
+          value={form.notes}
+          onChange={handleChange}
+          placeholder="Observaciones..."
+          Icon={FileText}
+          textarea
+        />
+      </section>
+
+      {/* Info box */}
+      <div className="mt-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800/40 rounded-2xl p-4 flex gap-3">
+        <div className="w-7 h-7 rounded-full bg-blue-500 flex items-center justify-center shrink-0 mt-0.5">
+          <Info size={14} className="text-white" />
+        </div>
+        <div>
+          <p className="text-sm font-semibold text-blue-700 dark:text-blue-300">Importante</p>
+          <p className="text-xs text-blue-600/80 dark:text-blue-300/70 mt-0.5">
+            Asegúrate de verificar que la información sea correcta. Esta información será utilizada para la gestión de préstamos.
+          </p>
+        </div>
+      </div>
+
+      {error && (
+        <p className="text-sm text-red-500 mt-3 text-center">{error}</p>
+      )}
+
+      {/* Submit */}
       <button
         onClick={handleSubmit}
         disabled={saving}
-        className="w-full bg-blue-600 text-white font-semibold py-3 rounded-2xl shadow active:scale-95 transition disabled:opacity-50"
+        className="w-full bg-blue-600 text-white font-semibold py-3.5 rounded-2xl shadow mt-5 flex items-center justify-center gap-2 active:scale-95 transition disabled:opacity-50"
       >
-        {saving ? 'Guardando...' : isEditing ? 'Guardar Cambios' : 'Crear Cliente'}
+        {saving
+          ? 'Guardando...'
+          : isEditing
+            ? <>Guardar cambios <Save size={18} /></>
+            : <>Crear cliente <ArrowRight size={18} /></>
+        }
       </button>
     </div>
   )
 }
 
-function Field({ label, name, value, onChange, placeholder, type = 'text', textarea }) {
-  const cls = "w-full border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 rounded-xl px-3 py-2 text-gray-800 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+function Field({ label, name, value, onChange, placeholder, type = 'text', Icon, textarea }) {
+  const baseCls = "w-full border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 rounded-xl pl-10 pr-3 py-3 text-gray-800 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+
   return (
     <div>
-      <label className="text-sm text-gray-500 dark:text-gray-400 mb-1 block">{label}</label>
-      {textarea
-        ? <textarea name={name} value={value} onChange={onChange} placeholder={placeholder} className={cls} rows={2} />
-        : <input name={name} value={value} onChange={onChange} placeholder={placeholder} type={type} className={cls} />
-      }
+      <label className="text-sm text-gray-600 dark:text-gray-300 mb-1.5 block font-medium">{label}</label>
+      <div className="relative">
+        {Icon && (
+          <Icon size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+        )}
+        {textarea
+          ? <textarea name={name} value={value || ''} onChange={onChange} placeholder={placeholder} className={`${baseCls} resize-none`} rows={3} />
+          : <input name={name} value={value || ''} onChange={onChange} placeholder={placeholder} type={type} className={baseCls} />
+        }
+      </div>
     </div>
   )
 }

@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { db } from '../db/db'
+import { supabase } from '../db/supabase'
 import { formatCOP, parseCOP } from '../utils/format'
 import { calcInterest, calcTotalLoan } from '../utils/loanCalc'
+import { useAuth } from '../context/AuthContext'
+import { ChevronLeft } from 'lucide-react'
 
 const initialLoan = {
     amount: '', rate: '', frequency: 'mensual',
@@ -12,6 +14,7 @@ const initialLoan = {
 export default function NewLoan() {
     const navigate = useNavigate()
     const [searchParams] = useSearchParams()
+    const { user } = useAuth()
 
     const [query, setQuery] = useState('')
     const [results, setResults] = useState([])
@@ -23,21 +26,27 @@ export default function NewLoan() {
     const amount = parseCOP(loan.amount)
     const rate = parseFloat(loan.rate) || 0
     const numPayments = parseInt(loan.numPayments) || 0
-    const preview = amount && rate ? calcTotalLoan(amount, rate, numPayments) : null
+    const preview = amount && rate ? calcTotalLoan(amount, rate, numPayments, loan.frequency) : null
 
-    // Preseleccionar cliente si viene de NewClient
+    // Preseleccionar cliente si viene de ClientDetail
     useEffect(() => {
         const clientId = searchParams.get('clientId')
-        if (clientId) db.clients.get(Number(clientId)).then(c => { if (c) setSelectedClient(c) })
+        if (clientId) {
+            supabase.from('clients').select('*').eq('id', clientId).single()
+                .then(({ data }) => { if (data) setSelectedClient(data) })
+        }
     }, [])
 
     // Búsqueda con debounce
     useEffect(() => {
         if (query.trim().length < 2) { setResults([]); setSearched(false); return }
         const timer = setTimeout(async () => {
-            const q = query.toLowerCase()
-            const all = await db.clients.toArray()
-            setResults(all.filter(c => c.name?.toLowerCase().includes(q) || c.cedula?.includes(q)))
+            const { data } = await supabase
+                .from('clients')
+                .select('*')
+                .or(`name.ilike.%${query}%,cedula.ilike.%${query}%`)
+                .limit(10)
+            setResults(data || [])
             setSearched(true)
         }, 300)
         return () => clearTimeout(timer)
@@ -72,27 +81,32 @@ export default function NewLoan() {
         }
         setSaving(true)
         try {
-            await db.loans.add({
-                clientId: selectedClient.id,
+            await supabase.from('loans').insert({
+                user_id: user.id,
+                client_id: selectedClient.id,
                 amount,
-                interestRate: rate,
-                interestAmount: calcInterest(amount, rate),
+                interest_rate: rate,
+                interest_amount: calcInterest(amount, rate, loan.frequency),
                 frequency: loan.frequency,
-                startDate: loan.startDate,
-                firstPaymentDate: loan.firstPaymentDate,
+                start_date: loan.startDate,
+                first_payment_date: loan.firstPaymentDate || null,
                 notes: loan.notes,
                 status: 'active',
-                createdAt: new Date().toISOString(),
             })
-            navigate('/clients')
+            navigate('/loans')
         } finally {
             setSaving(false)
         }
     }
 
     return (
-        <div className="p-4 max-w-lg mx-auto">
-            <h1 className="text-2xl font-bold mb-6 text-gray-800 dark:text-white">Nuevo Préstamo</h1>
+        <div className="p-4 max-w-lg mx-auto pb-24">
+            <div className="flex items-center gap-3 mb-6">
+                <button onClick={() => navigate(-1)} className="text-blue-400">
+                    <ChevronLeft size={24} />
+                </button>
+                <h1 className="text-2xl font-bold text-gray-800 dark:text-white">Nuevo Préstamo</h1>
+            </div>
 
             {/* CLIENTE */}
             <section className="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm mb-4">
@@ -141,7 +155,7 @@ export default function NewLoan() {
                 )}
             </section>
 
-            {/* PRÉSTAMO — solo si hay cliente */}
+            {/* PRÉSTAMO */}
             {selectedClient && (
                 <>
                     <section className="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm mb-4">
@@ -163,20 +177,8 @@ export default function NewLoan() {
                                     <option value="quincenal">Quincenal</option>
                                 </select>
                             </div>
-                            <Field
-                                label="Fecha del préstamo *"
-                                name="startDate"
-                                value={loan.startDate}
-                                onChange={handleLoanChange}
-                                type="date"
-                            />
-                            <Field
-                                label="Fecha del primer pago *"
-                                name="firstPaymentDate"
-                                value={loan.firstPaymentDate}
-                                onChange={handleLoanChange}
-                                type="date"
-                            />
+                            <Field label="Fecha del préstamo *" name="startDate" value={loan.startDate} onChange={handleLoanChange} type="date" />
+                            <Field label="Fecha del primer pago" name="firstPaymentDate" value={loan.firstPaymentDate} onChange={handleLoanChange} type="date" />
                             <Field label="Notas del préstamo" name="notes" value={loan.notes} onChange={handleLoanChange} placeholder="Condiciones especiales..." textarea />
                         </div>
                     </section>
@@ -204,7 +206,6 @@ export default function NewLoan() {
                     </button>
                 </>
             )}
-
         </div>
     )
 }

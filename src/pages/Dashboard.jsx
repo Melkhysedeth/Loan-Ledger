@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
-import { db } from '../db/db'
+import { supabase } from '../db/supabase'
+import { useAuth } from '../context/AuthContext'
 import { formatCOP } from '../utils/format'
+import { calcNextPaymentDate, classifyLoan } from '../utils/loanCalc'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
-import { Bell, DollarSign, LayoutList, AlertTriangle, Calendar } from 'lucide-react'
+import { Bell, DollarSign, LayoutList, AlertTriangle, Smile, Calendar } from 'lucide-react'
 
 function getGreeting() {
     const h = new Date().getHours()
@@ -24,52 +26,59 @@ export default function Dashboard() {
         attention: []
     })
 
+    const { user } = useAuth()
+    const userName = user?.user_metadata?.full_name?.split(' ')[0] || 'usuario'
+
     useEffect(() => {
         async function load() {
             const now = new Date()
-            const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
-            const in7days = new Date(now); in7days.setDate(now.getDate() + 7)
+            const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
 
-            const [clients, loans, payments] = await Promise.all([
-                db.clients.toArray(),
-                db.loans.toArray(),
-                db.payments.toArray()
+            const [{ data: clients }, { data: loans }, { data: payments }] = await Promise.all([
+                supabase.from('clients').select('*'),
+                supabase.from('loans').select('*'),
+                supabase.from('payments').select('*'),
             ])
 
-            const activeLoans = loans.filter(l => l.status === 'active')
+            const allLoans = loans || []
+            const allClients = clients || []
+            const allPayments = payments || []
+
+            const activeLoans = allLoans.filter(l => l.status === 'active')
             const totalLent = activeLoans.reduce((s, l) => s + (l.amount || 0), 0)
 
-            const paymentsThisMonth = payments.filter(p => new Date(p.date) >= startOfMonth)
-            const collectedThisMonth = paymentsThisMonth.reduce((s, p) => s + (p.totalPaid || 0), 0)
+            const collectedThisMonth = allPayments
+                .filter(p => p.date >= startOfMonth.split('T')[0])
+                .reduce((s, p) => s + (p.total_paid || 0), 0)
 
-            const overdue = activeLoans
-                .filter(l => l.dueDate && new Date(l.dueDate) < now)
-                .map(l => ({ ...l, client: clients.find(c => c.id === l.clientId) }))
+            // Mora y próximos usando loanCalc (igual que Collections)
+            const overdue = []
+            const dueSoon = []
 
-            const dueSoon = activeLoans
-                .filter(l => {
-                    const due = new Date(l.dueDate)
-                    return due >= now && due <= in7days
-                })
-                .map(l => ({ ...l, client: clients.find(c => c.id === l.clientId) }))
+            for (const loan of activeLoans) {
+                if (!loan.first_payment_date) continue
+                const loanPayments = allPayments.filter(p => p.loan_id === loan.id)
+                const paymentsMade = loanPayments.length
+                const classification = classifyLoan(loan.first_payment_date, loan.frequency, paymentsMade)
+                const client = allClients.find(c => c.id === loan.client_id)
+
+                if (classification === 'overdue') overdue.push({ ...loan, client })
+                if (classification === 'today' || classification === 'soon') dueSoon.push({ ...loan, client })
+            }
 
             // Gráfica: últimos 6 meses
             const monthlyData = Array.from({ length: 6 }, (_, i) => {
                 const d = new Date(now.getFullYear(), now.getMonth() - 5 + i, 1)
                 const nextMonth = new Date(d.getFullYear(), d.getMonth() + 1, 1)
+                const dStr = d.toISOString().split('T')[0]
+                const nStr = nextMonth.toISOString().split('T')[0]
 
-                const cobrado = payments
-                    .filter(p => {
-                        const pd = new Date(p.date)
-                        return pd >= d && pd < nextMonth
-                    })
-                    .reduce((s, p) => s + (p.totalPaid || 0), 0)
+                const cobrado = allPayments
+                    .filter(p => p.date >= dStr && p.date < nStr)
+                    .reduce((s, p) => s + (p.total_paid || 0), 0)
 
-                const prestado = loans
-                    .filter(l => {
-                        const ld = new Date(l.createdAt)
-                        return ld >= d && ld < nextMonth
-                    })
+                const prestado = allLoans
+                    .filter(l => l.created_at >= dStr && l.created_at < nStr)
                     .reduce((s, l) => s + (l.amount || 0), 0)
 
                 return { month: MONTHS[d.getMonth()], cobrado, prestado }
@@ -77,7 +86,7 @@ export default function Dashboard() {
 
             const attention = [
                 ...overdue.map(l => ({ ...l, tag: 'overdue' })),
-                ...dueSoon.map(l => ({ ...l, tag: 'dueSoon' }))
+                ...dueSoon.map(l => ({ ...l, tag: 'dueSoon' })),
             ].slice(0, 5)
 
             setStats({ totalLent, collectedThisMonth, activeLoans: activeLoans.length, overdue, dueSoon, monthlyData, attention })
@@ -92,7 +101,10 @@ export default function Dashboard() {
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div>
-                    <h1 className="text-xl font-bold text-gray-800 dark:text-white">{getGreeting()}! 👋</h1>
+                    <h1 className="text-xl font-bold text-gray-800 dark:text-white flex items-center gap-2">
+                        <Smile size={22} className="text-blue-400" />
+                        {getGreeting()}, {userName}!
+                    </h1>
                     <p className="text-sm text-gray-400">{new Date().toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
                 </div>
                 <button className="relative p-2 bg-white dark:bg-gray-800 rounded-full shadow">
@@ -109,7 +121,7 @@ export default function Dashboard() {
             {/* 4 métricas */}
             <div className="grid grid-cols-2 gap-3">
                 <MetricCard label="Total cobrado" sub="este mes" value={formatCOP(collectedThisMonth)} color="blue" Icon={DollarSign} />
-                <MetricCard label="Préstamos activos" sub="clientes" value={activeLoans} color="green" Icon={LayoutList} />
+                <MetricCard label="Préstamos activos" sub="activos" value={activeLoans} color="green" Icon={LayoutList} />
                 <MetricCard label="En mora" sub="clientes" value={overdue.length} color="red" Icon={AlertTriangle} />
                 <MetricCard label="Próximos a vencer" sub="clientes" value={dueSoon.length} color="purple" Icon={Calendar} />
             </div>
@@ -135,7 +147,7 @@ export default function Dashboard() {
                 </div>
             </div>
 
-            {/* Clientes que requieren atención */}
+            {/* Requieren atención */}
             {attention?.length > 0 && (
                 <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm overflow-hidden">
                     <div className="flex justify-between items-center px-4 pt-4 pb-2">
@@ -153,10 +165,10 @@ export default function Dashboard() {
 
 function MetricCard({ label, sub, value, color, Icon }) {
     const themes = {
-        blue: { bg: 'bg-blue-50 dark:bg-blue-950/40', icon: 'bg-blue-100 dark:bg-blue-900/50 text-blue-500', wave: '#3b5bdb', text: 'text-blue-600 dark:text-blue-400' },
-        green: { bg: 'bg-green-50 dark:bg-green-950/40', icon: 'bg-green-100 dark:bg-green-900/50 text-green-500', wave: '#22c55e', text: 'text-green-600 dark:text-green-400' },
-        red: { bg: 'bg-red-50 dark:bg-red-950/40', icon: 'bg-red-100 dark:bg-red-900/50 text-red-500', wave: '#ef4444', text: 'text-red-600 dark:text-red-400' },
-        purple: { bg: 'bg-purple-50 dark:bg-purple-950/40', icon: 'bg-purple-100 dark:bg-purple-900/50 text-purple-500', wave: '#a855f7', text: 'text-purple-600 dark:text-purple-400' },
+        blue: { bg: 'bg-blue-50 dark:bg-blue-950/40', icon: 'bg-blue-100 dark:bg-blue-900/50 text-blue-500', wave: '#3b5bdb' },
+        green: { bg: 'bg-green-50 dark:bg-green-950/40', icon: 'bg-green-100 dark:bg-green-900/50 text-green-500', wave: '#22c55e' },
+        red: { bg: 'bg-red-50 dark:bg-red-950/40', icon: 'bg-red-100 dark:bg-red-900/50 text-red-500', wave: '#ef4444' },
+        purple: { bg: 'bg-purple-50 dark:bg-purple-950/40', icon: 'bg-purple-100 dark:bg-purple-900/50 text-purple-500', wave: '#a855f7' },
     }
     const t = themes[color]
 
@@ -168,8 +180,6 @@ function MetricCard({ label, sub, value, color, Icon }) {
             <p className="text-xs text-gray-500 dark:text-gray-400">{label}</p>
             <p className="text-2xl font-bold text-gray-800 dark:text-white mt-0.5">{value}</p>
             <p className="text-xs text-gray-400">{sub}</p>
-
-            {/* Onda decorativa */}
             <svg className="absolute bottom-0 right-0 opacity-20" width="80" height="40" viewBox="0 0 80 40" fill="none">
                 <path d="M0 30 Q10 10 20 25 Q30 40 40 20 Q50 0 60 18 Q70 35 80 15" stroke={t.wave} strokeWidth="2.5" fill="none" strokeLinecap="round" />
             </svg>
@@ -181,7 +191,9 @@ function AttentionRow({ loan, last }) {
     const name = loan.client?.name || 'Cliente'
     const initials = name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
     const isOverdue = loan.tag === 'overdue'
-    const avatarColor = isOverdue ? 'bg-red-100 dark:bg-red-900/40 text-red-600' : 'bg-orange-100 dark:bg-orange-900/40 text-orange-500'
+    const avatarColor = isOverdue
+        ? 'bg-red-100 dark:bg-red-900/40 text-red-600'
+        : 'bg-orange-100 dark:bg-orange-900/40 text-orange-500'
 
     return (
         <div className={`flex items-center gap-3 px-4 py-3 ${!last ? 'border-b border-gray-100 dark:border-gray-700' : ''}`}>
@@ -198,7 +210,9 @@ function AttentionRow({ loan, last }) {
                 <p className={`font-semibold text-sm ${isOverdue ? 'text-red-500' : 'text-orange-500'}`}>
                     {formatCOP(loan.amount)}
                 </p>
-                <svg width="16" height="16" fill="none" stroke="#6b7280" strokeWidth="2" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6" /></svg>
+                <svg width="16" height="16" fill="none" stroke="#6b7280" strokeWidth="2" viewBox="0 0 24 24">
+                    <path d="M9 18l6-6-6-6" />
+                </svg>
             </div>
         </div>
     )

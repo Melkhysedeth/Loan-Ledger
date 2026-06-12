@@ -1,170 +1,214 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { db } from '../db/db'
+import { supabase } from '../db/supabase'
+import { useAuth } from '../context/AuthContext'
 import { formatCOP } from '../utils/format'
 import { calcTotalLoan, calcNextPaymentDate, classifyLoan } from '../utils/loanCalc'
-import { ChevronLeft, DollarSign, Snowflake, CheckCircle, AlertCircle, Clock, Pencil, X, Handshake } from 'lucide-react'
+import { ChevronLeft, DollarSign, Snowflake, CheckCircle, AlertCircle, Pencil, X, Handshake, Calendar, Percent, RefreshCw, CreditCard } from 'lucide-react'
 
 export default function LoanDetail() {
     const { id } = useParams()
     const navigate = useNavigate()
+    const { user } = useAuth()
     const [loan, setLoan] = useState(null)
     const [client, setClient] = useState(null)
     const [payments, setPayments] = useState([])
-    const [modal, setModal] = useState(null) // 'pay' | 'interest' | 'freeze' | 'settle' | 'agreement'
+    const [modal, setModal] = useState(null)
 
     useEffect(() => { load() }, [id])
 
     async function load() {
-        const l = await db.loans.get(Number(id))
+        const [{ data: l }, { data: p }] = await Promise.all([
+            supabase.from('loans').select('*').eq('id', id).single(),
+            supabase.from('payments').select('*').eq('loan_id', id).order('date', { ascending: false }),
+        ])
         if (!l) return
-        const c = await db.clients.get(l.clientId)
-        const p = await db.payments.where('loanId').equals(Number(id)).toArray()
+        const { data: c } = await supabase.from('clients').select('*').eq('id', l.client_id).single()
         setLoan(l)
         setClient(c)
-        setPayments(p.sort((a, b) => new Date(b.date) - new Date(a.date)))
+        setPayments(p || [])
     }
 
     if (!loan) return <div className="p-6 text-center text-gray-400 mt-20">Cargando...</div>
 
-    const totalPaid = payments.reduce((s, p) => s + (p.capitalPaid || 0), 0)
-    const totalInterestPaid = payments.reduce((s, p) => s + (p.interestPaid || 0), 0)
-    const remaining = loan.amount - totalPaid
-    const preview = loan.numPayments ? calcTotalLoan(loan.amount, loan.interestRate, loan.numPayments) : null
-    const paymentsMade = payments.length
-    const nextPayment = calcNextPaymentDate(loan.firstPaymentDate, loan.frequency, paymentsMade)
-    const classification = classifyLoan(loan.firstPaymentDate, loan.frequency, paymentsMade)
+    const totalPaid         = payments.reduce((s, p) => s + (p.capital_paid || 0), 0)
+    const totalInterestPaid = payments.reduce((s, p) => s + (p.interest_paid || 0), 0)
+    const remaining         = loan.amount - totalPaid
+    const paymentsMade      = payments.length
+    const nextPayment       = calcNextPaymentDate(loan.first_payment_date, loan.frequency, paymentsMade)
+    const classification    = classifyLoan(loan.first_payment_date, loan.frequency, paymentsMade)
+    const preview           = loan.num_payments ? calcTotalLoan(loan.amount, loan.interest_rate, loan.num_payments) : null
+    const initials          = (client?.name || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
+    const isOverdue         = classification === 'overdue' || loan.status === 'overdue'
+    const isPaid            = loan.status === 'paid'
 
-    // ── 1. STATUS incluye 'agreement' ──
     const STATUS = {
-        active:    { label: 'Activo',           color: 'text-green-400 bg-green-900/30',  Icon: CheckCircle },
-        frozen:    { label: 'Congelado',         color: 'text-blue-400 bg-blue-900/30',   Icon: Snowflake   },
-        overdue:   { label: 'En mora',           color: 'text-red-400 bg-red-900/30',     Icon: AlertCircle },
-        paid:      { label: 'Liquidado',         color: 'text-gray-400 bg-gray-700',      Icon: CheckCircle },
-        agreement: { label: 'Acuerdo especial',  color: 'text-amber-400 bg-amber-900/30', Icon: AlertCircle },
+        active:    { label: 'Activo',          color: 'text-green-400 bg-green-900/30',  dot: 'bg-green-400'  },
+        frozen:    { label: 'Congelado',        color: 'text-blue-400 bg-blue-900/30',   dot: 'bg-blue-400'   },
+        overdue:   { label: 'En mora',          color: 'text-red-400 bg-red-900/30',     dot: 'bg-red-400'    },
+        paid:      { label: 'Liquidado',        color: 'text-gray-400 bg-gray-700',      dot: 'bg-gray-400'   },
+        agreement: { label: 'Acuerdo especial', color: 'text-amber-400 bg-amber-900/30', dot: 'bg-amber-400'  },
     }
     const status = STATUS[loan.status] || STATUS.active
 
     return (
-        <div className="pb-24">
+        <div className="pb-32 bg-gray-50 dark:bg-gray-950 min-h-screen">
+
             {/* Header */}
             <div className="px-4 pt-6 pb-4 flex items-center gap-3">
                 <button onClick={() => navigate(-1)} className="text-blue-400">
                     <ChevronLeft size={24} />
                 </button>
                 <div className="flex-1">
-                    <h1 className="text-xl font-bold text-white">{client?.name || 'Cliente'}</h1>
-                    <p className="text-xs text-gray-400">{client?.phone} {client?.cedula ? `· CC ${client.cedula}` : ''}</p>
+                    <div className="flex items-center gap-2">
+                        <h1 className="text-base font-bold text-gray-900 dark:text-white">Préstamo #{String(id).slice(-4).padStart(4, '0')}</h1>
+                        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full flex items-center gap-1 ${status.color}`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${status.dot}`} /> {status.label}
+                        </span>
+                    </div>
+                    <p className="text-xs text-gray-400">
+                        Otorgado el {loan.start_date ? new Date(loan.start_date).toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
+                    </p>
                 </div>
-                <span className={`text-xs font-semibold px-2 py-1 rounded-full flex items-center gap-1 ${status.color}`}>
-                    <status.Icon size={11} /> {status.label}
-                </span>
             </div>
 
             {/* Banner acuerdo especial */}
             {loan.status === 'agreement' && (
-                <div className="mx-4 mb-4 bg-amber-900/30 border border-amber-700/40 rounded-2xl px-4 py-3 flex gap-3 items-start">
+                <div className="mx-4 mb-3 bg-amber-900/30 border border-amber-700/40 rounded-2xl px-4 py-3 flex gap-3 items-start">
                     <AlertCircle size={16} className="text-amber-400 mt-0.5 shrink-0" />
                     <div>
                         <p className="text-sm font-semibold text-amber-400">Acuerdo especial activo</p>
                         <p className="text-xs text-amber-300/70 mt-0.5">Sin intereses · Solo abono a capital</p>
-                        {loan.agreementNote && <p className="text-xs text-gray-400 mt-1">{loan.agreementNote}</p>}
+                        {loan.agreement_note && <p className="text-xs text-gray-400 mt-1">{loan.agreement_note}</p>}
                     </div>
                 </div>
             )}
 
-            {/* Tarjeta principal */}
-            <div className="mx-4 rounded-2xl p-5 text-white mb-4" style={{ background: 'linear-gradient(135deg, #3b5bdb 0%, #7048e8 100%)' }}>
-                <p className="text-sm opacity-70">Capital prestado</p>
-                <p className="text-3xl font-bold mt-1">{formatCOP(loan.amount)}</p>
-                <div className="flex gap-6 mt-4">
+            {/* Tarjeta cliente */}
+            <div className="mx-4 bg-white dark:bg-gray-800 rounded-2xl p-4 mb-3 shadow-sm">
+                <div className="flex items-center gap-3 mb-3">
+                    <div className="w-12 h-12 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-300 font-bold text-base flex items-center justify-center shrink-0">
+                        {initials}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                        <p className="font-bold text-gray-800 dark:text-gray-100">{client?.name || '—'}</p>
+                        {client?.phone && <p className="text-xs text-gray-400">{client.phone}</p>}
+                    </div>
+                    <div className="text-right shrink-0">
+                        <p className="text-[10px] text-gray-400">{isOverdue ? 'Vencido desde' : isPaid ? 'Liquidado' : 'Próximo pago'}</p>
+                        {!isPaid && nextPayment && (
+                            <p className={`text-xs font-semibold flex items-center gap-1 justify-end mt-0.5 ${isOverdue ? 'text-red-500' : 'text-blue-500'}`}>
+                                <Calendar size={10} />
+                                {nextPayment.toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' })}
+                            </p>
+                        )}
+                    </div>
+                </div>
+
+                {/* Métricas principales */}
+                <div className="grid grid-cols-4 gap-2 pt-3 border-t border-gray-100 dark:border-gray-700">
                     <div>
-                        <p className="text-xs opacity-60">Pagado</p>
-                        <p className="font-semibold">{formatCOP(totalPaid)}</p>
+                        <p className="text-[10px] text-gray-400 mb-0.5">Monto</p>
+                        <p className="text-xs font-bold text-gray-800 dark:text-gray-100">{formatCOP(loan.amount)}</p>
                     </div>
                     <div>
-                        <p className="text-xs opacity-60">Saldo</p>
-                        <p className="font-semibold">{formatCOP(remaining)}</p>
+                        <p className="text-[10px] text-gray-400 mb-0.5">Total a pagar</p>
+                        <p className="text-xs font-bold text-gray-800 dark:text-gray-100">{preview ? formatCOP(preview.totalToPay) : '—'}</p>
                     </div>
                     <div>
-                        <p className="text-xs opacity-60">Interés/cuota</p>
-                        <p className="font-semibold">{formatCOP(loan.interestAmount)}</p>
+                        <p className="text-[10px] text-gray-400 mb-0.5">Pendiente</p>
+                        <p className={`text-xs font-bold ${isPaid ? 'text-gray-400' : 'text-amber-500'}`}>{formatCOP(remaining)}</p>
+                    </div>
+                    <div>
+                        <p className="text-[10px] text-gray-400 mb-0.5">Cuotas</p>
+                        <p className="text-xs font-bold text-gray-800 dark:text-gray-100">
+                            {loan.num_payments ? `${paymentsMade} / ${loan.num_payments}` : `${paymentsMade}`}
+                        </p>
                     </div>
                 </div>
             </div>
 
-            {/* Resumen de intereses recaudados */}
-            <div className="mx-4 bg-gray-800 rounded-2xl px-4 py-3 mb-4 flex justify-between items-center">
-                <p className="text-sm text-gray-400">Intereses recaudados</p>
-                <p className="text-sm font-bold text-green-400">{formatCOP(totalInterestPaid)}</p>
-            </div>
-
-            {/* Info del préstamo */}
-            <div className="mx-4 bg-gray-800 rounded-2xl p-4 mb-4 space-y-2">
-                <InfoRow label="Tasa de interés" value={`${loan.interestRate}%`} />
-                <InfoRow label="Frecuencia" value={loan.frequency} />
-                <InfoRow label="Cuotas" value={loan.numPayments ? `${payments.length} / ${loan.numPayments}` : '—'} />
-                <InfoRow label="Inicio" value={loan.startDate ? new Date(loan.startDate).toLocaleDateString('es-CO') : '—'} />
-                <InfoRow label="Primer pago" value={loan.firstPaymentDate ? new Date(loan.firstPaymentDate).toLocaleDateString('es-CO') : '—'} />
-                <InfoRow label="Próximo pago" value={nextPayment ? nextPayment.toLocaleDateString('es-CO') : '—'} />
-                {preview && <InfoRow label="Total intereses" value={formatCOP(preview.totalInterest)} />}
-                {loan.notes && <InfoRow label="Notas" value={loan.notes} />}
-            </div>
-
-            {/* ── 2. Acciones — botón Acuerdo especial reemplaza Congelar cuando ya está en acuerdo ── */}
-            {loan.status !== 'paid' && (
-                <div className="mx-4 grid grid-cols-2 gap-3 mb-4">
-                    <ActionBtn Icon={DollarSign} label="Registrar pago" color="bg-blue-600" onClick={() => setModal('pay')} />
-                    <ActionBtn Icon={Pencil} label="Modificar interés" color="bg-gray-700" onClick={() => setModal('interest')} />
-
-                    {loan.status !== 'agreement' ? (
-                        <ActionBtn
-                            Icon={Handshake}
-                            label="Acuerdo especial"
-                            color="bg-amber-700/80"
-                            onClick={() => setModal('agreement')}
-                        />
-                    ) : (
-                        <ActionBtn
-                            Icon={Snowflake}
-                            label={loan.status === 'frozen' ? 'Descongelar' : 'Congelar'}
-                            color="bg-gray-700"
-                            onClick={() => setModal('freeze')}
-                        />
-                    )}
-
-                    <ActionBtn Icon={CheckCircle} label="Liquidar" color="bg-green-700" onClick={() => setModal('settle')} />
+            {/* Detalles del préstamo */}
+            <div className="mx-4 bg-white dark:bg-gray-800 rounded-2xl p-4 mb-3 shadow-sm">
+                <p className="text-sm font-bold text-gray-800 dark:text-gray-100 mb-3">Detalles del préstamo</p>
+                <div className="grid grid-cols-2 gap-3">
+                    <DetailCell Icon={Percent}    label="Tasa de interés"    value={`${loan.interest_rate}%`} />
+                    <DetailCell Icon={Calendar}   label="Fecha inicio"       value={loan.start_date ? new Date(loan.start_date).toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'} />
+                    <DetailCell Icon={RefreshCw}  label="Frecuencia"         value={loan.frequency} />
+                    <DetailCell Icon={Calendar}   label="Primer pago"        value={loan.first_payment_date ? new Date(loan.first_payment_date).toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'} />
+                    <DetailCell Icon={CreditCard} label="Interés / cuota"    value={formatCOP(loan.interest_amount)} />
+                    <DetailCell Icon={DollarSign} label="Intereses cobrados" value={formatCOP(totalInterestPaid)} valueColor="text-green-500" />
                 </div>
-            )}
+                {loan.notes && (
+                    <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
+                        <p className="text-xs text-gray-400">Notas</p>
+                        <p className="text-sm text-gray-300 mt-0.5">{loan.notes}</p>
+                    </div>
+                )}
+            </div>
+
+            {/* Resumen de pagos */}
+            <div className="mx-4 bg-white dark:bg-gray-800 rounded-2xl p-4 mb-3 shadow-sm">
+                <p className="text-sm font-bold text-gray-800 dark:text-gray-100 mb-3">Resumen de pagos</p>
+                <div className="grid grid-cols-2 gap-2">
+                    <SummaryBox label="Pagado"       value={formatCOP(totalPaid)}    sub={`${paymentsMade} cuotas`}  color="text-green-500"  bg="bg-green-50 dark:bg-green-900/20" />
+                    <SummaryBox label="Pendiente"    value={formatCOP(remaining)}    sub={loan.num_payments ? `${loan.num_payments - paymentsMade} cuotas` : '—'} color="text-amber-500" bg="bg-amber-50 dark:bg-amber-900/20" />
+                    <SummaryBox label="Próximo pago" value={nextPayment && !isPaid ? formatCOP(loan.interest_amount) : '—'} sub={nextPayment && !isPaid ? nextPayment.toLocaleDateString('es-CO', { day: 'numeric', month: 'short' }) : '—'} color="text-blue-500" bg="bg-blue-50 dark:bg-blue-900/20" />
+                    <SummaryBox label="Valor cuota"  value={formatCOP(loan.interest_amount)} sub="interés" color="text-purple-500" bg="bg-purple-50 dark:bg-purple-900/20" />
+                </div>
+            </div>
 
             {/* Historial de pagos */}
-            <div className="mx-4 bg-gray-800 rounded-2xl overflow-hidden">
-                <p className="font-semibold text-gray-200 px-4 pt-4 pb-2">Historial de pagos</p>
+            <div className="mx-4 bg-white dark:bg-gray-800 rounded-2xl overflow-hidden mb-3 shadow-sm">
+                <p className="font-bold text-gray-800 dark:text-gray-100 px-4 pt-4 pb-2 text-sm">Historial de pagos</p>
                 {payments.length === 0 ? (
                     <p className="text-sm text-gray-500 px-4 pb-4">Sin pagos registrados aún</p>
                 ) : (
                     payments.map((p, i) => (
-                        <div key={p.id} className={`flex items-center gap-3 px-4 py-3 ${i < payments.length - 1 ? 'border-b border-gray-700' : ''}`}>
-                            <div className="w-8 h-8 rounded-full bg-blue-900/40 flex items-center justify-center shrink-0">
-                                <DollarSign size={14} className="text-blue-400" />
+                        <div key={p.id} className={`flex items-center gap-3 px-4 py-3 ${i < payments.length - 1 ? 'border-b border-gray-100 dark:border-gray-700' : ''}`}>
+                            <div className="w-8 h-8 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center shrink-0">
+                                <CheckCircle size={14} className="text-green-500" />
                             </div>
                             <div className="flex-1">
-                                <p className="text-sm text-gray-200">{formatCOP(p.totalPaid)}</p>
-                                <p className="text-xs text-gray-500">
-                                    Capital: {formatCOP(p.capitalPaid)} · Interés: {formatCOP(p.interestPaid)}
+                                <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">{formatCOP(p.total_paid)}</p>
+                                <p className="text-xs text-gray-400">
+                                    Capital: {formatCOP(p.capital_paid)} · Interés: {formatCOP(p.interest_paid)}
                                 </p>
                             </div>
                             <div className="text-right">
                                 <p className="text-xs text-gray-400">{new Date(p.date).toLocaleDateString('es-CO')}</p>
                                 {p.late && <span className="text-[10px] text-red-400">Tardío</span>}
                             </div>
+                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400">
+                                Pagado
+                            </span>
                         </div>
                     ))
                 )}
             </div>
 
-            {/* ── 3. Modales — se agrega agreement ── */}
-            {modal === 'pay'       && <PayModal       loan={loan} onClose={() => setModal(null)} onDone={() => { setModal(null); load() }} />}
+            {/* Acciones fila 1 */}
+            {loan.status !== 'paid' && (
+                <div className="mx-4 grid grid-cols-3 gap-2 mb-2">
+                    <ActionBtn Icon={DollarSign} label="Registrar pago"  color="bg-blue-600"     onClick={() => setModal('pay')} />
+                    <ActionBtn Icon={Pencil}     label="Editar interés"  color="bg-gray-700"     onClick={() => setModal('interest')} />
+                    {loan.status !== 'agreement' ? (
+                        <ActionBtn Icon={Handshake} label="Acuerdo"      color="bg-amber-700/80" onClick={() => setModal('agreement')} />
+                    ) : (
+                        <ActionBtn Icon={Snowflake} label="Congelar"     color="bg-gray-700"     onClick={() => setModal('freeze')} />
+                    )}
+                </div>
+            )}
+            {/* Acciones fila 2 */}
+            {loan.status !== 'paid' && (
+                <div className="mx-4 grid grid-cols-2 gap-2 mb-4">
+                    <ActionBtn Icon={Snowflake}   label={loan.status === 'frozen' ? 'Descongelar' : 'Congelar'} color="bg-gray-700"  onClick={() => setModal('freeze')} />
+                    <ActionBtn Icon={CheckCircle} label="Marcar liquidado" color="bg-red-700/80" onClick={() => setModal('settle')} />
+                </div>
+            )}
+
+            {/* Modales */}
+            {modal === 'pay'       && <PayModal       loan={loan} userId={user.id} onClose={() => setModal(null)} onDone={() => { setModal(null); load() }} />}
             {modal === 'interest'  && <InterestModal  loan={loan} onClose={() => setModal(null)} onDone={() => { setModal(null); load() }} />}
             {modal === 'freeze'    && <FreezeModal    loan={loan} onClose={() => setModal(null)} onDone={() => { setModal(null); load() }} />}
             {modal === 'settle'    && <SettleModal    loan={loan} onClose={() => setModal(null)} onDone={() => { setModal(null); load() }} />}
@@ -173,21 +217,34 @@ export default function LoanDetail() {
     )
 }
 
-// ── Componentes pequeños ──────────────────────────────────────
-
-function InfoRow({ label, value }) {
+function DetailCell({ Icon, label, value, valueColor = 'text-gray-800 dark:text-gray-100' }) {
     return (
-        <div className="flex justify-between text-sm">
-            <span className="text-gray-400">{label}</span>
-            <span className="text-gray-100 font-medium capitalize">{value}</span>
+        <div className="flex items-start gap-2">
+            <div className="w-7 h-7 rounded-lg bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center shrink-0 mt-0.5">
+                <Icon size={13} className="text-blue-500" />
+            </div>
+            <div>
+                <p className="text-[10px] text-gray-400">{label}</p>
+                <p className={`text-xs font-semibold capitalize ${valueColor}`}>{value}</p>
+            </div>
+        </div>
+    )
+}
+
+function SummaryBox({ label, value, sub, color, bg }) {
+    return (
+        <div className={`${bg} rounded-xl p-3`}>
+            <p className="text-[10px] text-gray-400 mb-1">{label}</p>
+            <p className={`text-sm font-bold ${color}`}>{value}</p>
+            <p className="text-[10px] text-gray-400 mt-0.5">{sub}</p>
         </div>
     )
 }
 
 function ActionBtn({ Icon, label, color, onClick }) {
     return (
-        <button onClick={onClick} className={`${color} rounded-2xl p-3 flex items-center gap-2 text-white text-sm font-medium active:scale-95 transition`}>
-            <Icon size={16} /> {label}
+        <button onClick={onClick} className={`${color} rounded-2xl p-3 flex items-center justify-center gap-2 text-white text-xs font-medium active:scale-95 transition`}>
+            <Icon size={14} /> {label}
         </button>
     )
 }
@@ -206,26 +263,25 @@ function ModalWrapper({ title, onClose, children }) {
     )
 }
 
-// ── Modal: Registrar pago ─────────────────────────────────────
-
-function PayModal({ loan, onClose, onDone }) {
+function PayModal({ loan, userId, onClose, onDone }) {
     const [capital, setCapital] = useState('')
     const [date, setDate] = useState(new Date().toISOString().split('T')[0])
     const [late, setLate] = useState(false)
     const [saving, setSaving] = useState(false)
 
-    const interest = loan.interestAmount || 0
+    const interest   = loan.interest_amount || 0
     const capitalNum = Number(capital) || 0
-    const total = interest + capitalNum
+    const total      = interest + capitalNum
 
     async function handleSave() {
         setSaving(true)
-        await db.payments.add({
-            loanId: loan.id,
+        await supabase.from('payments').insert({
+            user_id:       userId,
+            loan_id:       loan.id,
             date,
-            totalPaid: total,
-            interestPaid: interest,
-            capitalPaid: capitalNum,
+            total_paid:    total,
+            interest_paid: interest,
+            capital_paid:  capitalNum,
             late,
             notes: '',
         })
@@ -276,10 +332,8 @@ function PayModal({ loan, onClose, onDone }) {
     )
 }
 
-// ── Modal: Modificar interés ──────────────────────────────────
-
 function InterestModal({ loan, onClose, onDone }) {
-    const [rate, setRate] = useState(String(loan.interestRate))
+    const [rate, setRate] = useState(String(loan.interest_rate))
     const [saving, setSaving] = useState(false)
 
     async function handleSave() {
@@ -287,7 +341,7 @@ function InterestModal({ loan, onClose, onDone }) {
         if (!newRate) return
         setSaving(true)
         const newInterest = Math.round((loan.amount * newRate) / 100)
-        await db.loans.update(loan.id, { interestRate: newRate, interestAmount: newInterest })
+        await supabase.from('loans').update({ interest_rate: newRate, interest_amount: newInterest }).eq('id', loan.id)
         onDone()
     }
 
@@ -314,15 +368,13 @@ function InterestModal({ loan, onClose, onDone }) {
     )
 }
 
-// ── Modal: Congelar / Descongelar ─────────────────────────────
-
 function FreezeModal({ loan, onClose, onDone }) {
     const isFrozen = loan.status === 'frozen'
     const [saving, setSaving] = useState(false)
 
     async function handleSave() {
         setSaving(true)
-        await db.loans.update(loan.id, { status: isFrozen ? 'active' : 'frozen' })
+        await supabase.from('loans').update({ status: isFrozen ? 'active' : 'frozen' }).eq('id', loan.id)
         onDone()
     }
 
@@ -341,14 +393,12 @@ function FreezeModal({ loan, onClose, onDone }) {
     )
 }
 
-// ── Modal: Liquidar ───────────────────────────────────────────
-
 function SettleModal({ loan, onClose, onDone }) {
     const [saving, setSaving] = useState(false)
 
     async function handleSave() {
         setSaving(true)
-        await db.loans.update(loan.id, { status: 'paid' })
+        await supabase.from('loans').update({ status: 'paid' }).eq('id', loan.id)
         onDone()
     }
 
@@ -358,14 +408,12 @@ function SettleModal({ loan, onClose, onDone }) {
                 El préstamo se marcará como <span className="text-green-400 font-semibold">Liquidado</span>. Esta acción no se puede deshacer fácilmente.
             </p>
             <button onClick={handleSave} disabled={saving}
-                className="w-full bg-green-600 text-white font-semibold py-3 rounded-2xl active:scale-95 transition disabled:opacity-50">
+                className="w-full bg-red-600 text-white font-semibold py-3 rounded-2xl active:scale-95 transition disabled:opacity-50">
                 {saving ? 'Liquidando...' : 'Confirmar liquidación'}
             </button>
         </ModalWrapper>
     )
 }
-
-// ── Modal: Acuerdo especial ───────────────────────────────────
 
 function AgreementModal({ loan, onClose, onDone }) {
     const [note, setNote] = useState('')
@@ -373,13 +421,13 @@ function AgreementModal({ loan, onClose, onDone }) {
 
     async function handleSave() {
         setSaving(true)
-        await db.loans.update(loan.id, {
-            status: 'agreement',
-            interestRate: 0,
-            interestAmount: 0,
-            agreementDate: new Date().toISOString().split('T')[0],
-            agreementNote: note,
-        })
+        await supabase.from('loans').update({
+            status:          'agreement',
+            interest_rate:   0,
+            interest_amount: 0,
+            agreement_date:  new Date().toISOString().split('T')[0],
+            agreement_note:  note,
+        }).eq('id', loan.id)
         onDone()
     }
 

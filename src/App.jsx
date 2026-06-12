@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom'
 import Dashboard from './pages/Dashboard'
 import Clients from './pages/Clients'
 import NewLoan from './pages/NewLoan'
+import Reports from './pages/Reports'
 import NewClient from './pages/NewClient'
 import Loans from './pages/Loans'
 import LoanDetail from './pages/LoanDetail'
@@ -109,6 +110,7 @@ function AppRoutes() {
         <Route path="/collections" element={<Collections />} />
         <Route path="/clients/:id/detail" element={<ClientDetail />} />
         <Route path="/more" element={<More />} />
+        <Route path="/reports" element={<Reports />} />
       </Routes>
       <BottomNav />
     </div>
