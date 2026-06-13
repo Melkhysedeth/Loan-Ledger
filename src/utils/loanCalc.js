@@ -85,3 +85,12 @@ export function classifyLoan(firstPaymentDate, frequency, paymentsMade) {
     if (diffDays <= 7) return 'soon'
     return 'ok'
 }
+
+/**
+ * Interés del próximo pago para préstamos de interés variable.
+ * Se calcula sobre el capital pendiente (amount - capitalPaid).
+ */
+export function calcVariableInterest(amount, capitalPaid, ratePercent, frequency = 'mensual') {
+    const remaining = amount - capitalPaid
+    return calcInterest(remaining, ratePercent, frequency)
+}

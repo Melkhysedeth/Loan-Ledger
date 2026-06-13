@@ -3,12 +3,25 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../db/supabase'
 import { formatCOP } from '../utils/format'
 import { calcNextPaymentDate, classifyLoan } from '../utils/loanCalc'
-import { AlertCircle, Clock, CheckCircle, ChevronRight } from 'lucide-react'
+import { AlertCircle, Clock, CheckCircle, ChevronRight, MessageCircle } from 'lucide-react'
+
 
 const SECTIONS = {
     overdue: { label: 'Atrasados', color: 'text-red-500 dark:text-red-400', bg: 'bg-red-50 dark:bg-red-900/20', border: 'border-red-200 dark:border-red-800/50', avatarBg: 'bg-red-100 dark:bg-red-900/40', Icon: AlertCircle },
     today: { label: 'Cobrar hoy', color: 'text-yellow-600 dark:text-yellow-400', bg: 'bg-yellow-50 dark:bg-yellow-900/20', border: 'border-yellow-200 dark:border-yellow-800/50', avatarBg: 'bg-yellow-100 dark:bg-yellow-900/40', Icon: Clock },
     soon: { label: 'Próximos 7 días', color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-50 dark:bg-blue-900/20', border: 'border-blue-200 dark:border-blue-800/50', avatarBg: 'bg-blue-100 dark:bg-blue-900/40', Icon: Clock },
+}
+
+function enviarRecordatorio(loan) {
+    const client = loan.client
+    if (!client?.phone) { alert('Este cliente no tiene teléfono registrado'); return }
+    const phone = client.phone.replace(/\D/g, '')
+    const fullPhone = phone.startsWith('57') && phone.length === 12 ? phone : `57${phone}`
+    const fecha = loan.nextPayment
+        ? loan.nextPayment.toLocaleDateString('es-CO', { day: 'numeric', month: 'long' })
+        : 'próximamente'
+    const mensaje = `Hola ${client.name}, te recordamos que tienes un pago de ${formatCOP(loan.interest_amount)} con fecha límite el ${fecha}. Por favor contáctanos para coordinar. 🙏`
+    window.open(`https://wa.me/${fullPhone}?text=${encodeURIComponent(mensaje)}`, '_blank')
 }
 
 export default function Collections() {
@@ -110,29 +123,37 @@ function CollectionCard({ loan, cfg, onPress }) {
     const isAgreement = loan.status === 'agreement'
 
     return (
-        <button
-            onClick={onPress}
-            className={`w-full bg-white dark:bg-gray-800 rounded-2xl p-4 flex items-center gap-3 active:scale-[0.98] transition text-left border shadow-sm dark:shadow-none ${cfg.border}`}
-        >
-            <div className={`w-11 h-11 rounded-full ${cfg.avatarBg} font-bold text-sm flex items-center justify-center shrink-0 ${cfg.color}`}>
-                {initials}
-            </div>
-            <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                    <p className="font-semibold text-gray-900 dark:text-gray-100 text-sm truncate">{name}</p>
-                    {isAgreement && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 shrink-0">Acuerdo</span>
-                    )}
+        <div className={`w-full bg-white dark:bg-gray-800 rounded-2xl p-4 flex flex-col gap-3 border shadow-sm dark:shadow-none ${cfg.border}`}>
+            {/* Fila principal — navega al préstamo */}
+            <button onClick={onPress} className="flex items-center gap-3 active:scale-[0.98] transition text-left">
+                <div className={`w-11 h-11 rounded-full ${cfg.avatarBg} font-bold text-sm flex items-center justify-center shrink-0 ${cfg.color}`}>
+                    {initials}
                 </div>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{formatCOP(loan.interest_amount)} / cuota · {loan.frequency}</p>
-                <p className="text-xs text-gray-400 dark:text-gray-500">
-                    Próximo pago: {loan.nextPayment ? loan.nextPayment.toLocaleDateString('es-CO') : '—'}
-                </p>
-            </div>
-            <div className="flex flex-col items-end gap-1 shrink-0">
-                <p className={`text-sm font-bold ${cfg.color}`}>{formatCOP(loan.amount)}</p>
-                <ChevronRight size={16} className="text-gray-300 dark:text-gray-600" />
-            </div>
-        </button>
+                <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                        <p className="font-semibold text-gray-900 dark:text-gray-100 text-sm truncate">{name}</p>
+                        {isAgreement && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 shrink-0">Acuerdo</span>
+                        )}
+                    </div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{formatCOP(loan.interest_amount)} / cuota · {loan.frequency}</p>
+                    <p className="text-xs text-gray-400 dark:text-gray-500">
+                        Próximo pago: {loan.nextPayment ? loan.nextPayment.toLocaleDateString('es-CO') : '—'}
+                    </p>
+                </div>
+                <div className="flex flex-col items-end gap-1 shrink-0">
+                    <p className={`text-sm font-bold ${cfg.color}`}>{formatCOP(loan.amount)}</p>
+                    <ChevronRight size={16} className="text-gray-300 dark:text-gray-600" />
+                </div>
+            </button>
+
+            {/* Botón WhatsApp */}
+            <button
+                onClick={() => enviarRecordatorio(loan)}
+                className="w-full flex items-center justify-center gap-2 py-2 rounded-xl bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800/40 text-green-600 dark:text-green-400 text-xs font-semibold active:scale-95 transition"
+            >
+                <MessageCircle size={14} /> Enviar recordatorio
+            </button>
+        </div>
     )
 }

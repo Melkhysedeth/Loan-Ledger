@@ -8,7 +8,8 @@ import { ChevronLeft } from 'lucide-react'
 
 const initialLoan = {
     amount: '', rate: '', frequency: 'mensual',
-    startDate: '', firstPaymentDate: '', notes: ''
+    startDate: '', firstPaymentDate: '', notes: '',
+    interestType: 'fixed'
 }
 
 export default function NewLoan() {
@@ -82,8 +83,8 @@ export default function NewLoan() {
         setSaving(true)
         try {
             await supabase.from('loans').insert({
-                user_id: user.id,
                 client_id: selectedClient.id,
+                interest_type: loan.interestType,
                 amount,
                 interest_rate: rate,
                 interest_amount: calcInterest(amount, rate, loan.frequency),
@@ -169,6 +170,31 @@ export default function NewLoan() {
                                 />
                             </div>
                             <Field label="Tasa de interés % *" name="rate" value={loan.rate} onChange={handleLoanChange} placeholder="Ej: 10" type="number" />
+                            <div>
+                                <label className="text-sm text-gray-500 dark:text-gray-400 mb-1 block">Tipo de interés</label>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setLoan({ ...loan, interestType: 'fixed' })}
+                                        className={`py-2 rounded-xl text-sm font-medium border transition ${loan.interestType === 'fixed'
+                                            ? 'bg-blue-600 text-white border-blue-600'
+                                            : 'bg-white dark:bg-gray-900 text-gray-500 border-gray-200 dark:border-gray-700'
+                                            }`}
+                                    >
+                                        Interés fijo
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setLoan({ ...loan, interestType: 'variable' })}
+                                        className={`py-2 rounded-xl text-sm font-medium border transition ${loan.interestType === 'variable'
+                                            ? 'bg-blue-600 text-white border-blue-600'
+                                            : 'bg-white dark:bg-gray-900 text-gray-500 border-gray-200 dark:border-gray-700'
+                                            }`}
+                                    >
+                                        Interés variable
+                                    </button>
+                                </div>
+                            </div>
                             <div>
                                 <label className="text-sm text-gray-500 dark:text-gray-400 mb-1 block">Frecuencia de pago</label>
                                 <select name="frequency" value={loan.frequency} onChange={handleLoanChange}

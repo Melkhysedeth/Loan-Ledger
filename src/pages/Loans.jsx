@@ -33,6 +33,32 @@ export default function Loans() {
             supabase.from('payments').select('*'),
         ])
 
+        // Detectar y actualizar préstamos vencidos
+        const toUpdate = (allLoans || []).filter(loan => {
+            if (loan.status !== 'active') return false
+            const paymentsMade = (allPayments || []).filter(p => p.loan_id === loan.id).length
+            const classification = classifyLoan(loan.first_payment_date, loan.frequency, paymentsMade)
+            return classification === 'overdue'
+        })
+
+        if (toUpdate.length > 0) {
+            await Promise.all(
+                toUpdate.map(loan =>
+                    supabase.from('loans').update({ status: 'overdue' }).eq('id', loan.id)
+                )
+            )
+            // Recargar con los status actualizados
+            const { data: updatedLoans } = await supabase.from('loans').select('*').order('created_at', { ascending: false })
+            const enriched = (updatedLoans || []).map(loan => ({
+                ...loan,
+                client: (allClients || []).find(c => c.id === loan.client_id),
+            }))
+            setLoans(enriched)
+            setPayments(allPayments || [])
+            setLoading(false)
+            return
+        }
+
         const enriched = (allLoans || []).map(loan => ({
             ...loan,
             client: (allClients || []).find(c => c.id === loan.client_id),
@@ -44,7 +70,7 @@ export default function Loans() {
     }
 
     // Métricas del header
-    const activeLoans = loans.filter(l => l.status === 'active')
+    const activeLoans = loans.filter(l => ['active', 'overdue', 'frozen', 'agreement'].includes(l.status))
     const totalLent = activeLoans.reduce((s, l) => s + (l.amount || 0), 0)
     const totalPending = activeLoans.reduce((s, l) => {
         const paid = payments.filter(p => p.loan_id === l.id).reduce((a, p) => a + (p.capital_paid || 0), 0)

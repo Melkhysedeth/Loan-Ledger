@@ -48,7 +48,7 @@ export default function Clients() {
 
     const enriched = (allClients || []).map(client => {
       const loans = (allLoans || []).filter(l => l.client_id === client.id)
-      const activeLoans = loans.filter(l => l.status === 'active' || l.status === 'agreement')
+      const activeLoans = loans.filter(l => ['active', 'agreement', 'overdue', 'frozen'].includes(l.status))
       const payments = (allPayments || []).filter(p => loans.some(l => l.id === p.loan_id))
 
       const totalLoaned = activeLoans.reduce((sum, l) => sum + Number(l.amount || 0), 0)
@@ -219,8 +219,8 @@ function ClientCard({ client, onRefresh, onPress }) {
         <span className={`text-xs font-semibold px-2 py-1 rounded-full flex items-center gap-1 ${status.color}`}>
           {client.clientStatus !== 'none' && (
             <span className={`w-1.5 h-1.5 rounded-full ${client.clientStatus === 'overdue' ? 'bg-red-500'
-                : client.clientStatus === 'ok' ? 'bg-green-500'
-                  : 'bg-amber-500'
+              : client.clientStatus === 'ok' ? 'bg-green-500'
+                : 'bg-amber-500'
               }`} />
           )}
           {status.label}

@@ -44,7 +44,7 @@ export default function Dashboard() {
             const allClients = clients || []
             const allPayments = payments || []
 
-            const activeLoans = allLoans.filter(l => l.status === 'active')
+            const activeLoans = allLoans.filter(l => ['active', 'overdue', 'frozen', 'agreement'].includes(l.status))
             const totalLent = activeLoans.reduce((s, l) => s + (l.amount || 0), 0)
 
             const collectedThisMonth = allPayments

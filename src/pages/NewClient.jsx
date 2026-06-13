@@ -51,7 +51,6 @@ export default function NewClient() {
       const { data: { user } } = await supabase.auth.getUser()
 
       const { data, error } = await supabase.from('clients').insert({
-        user_id: user?.id,
         name: form.name,
         phone: form.phone,
         cedula: form.cedula,
