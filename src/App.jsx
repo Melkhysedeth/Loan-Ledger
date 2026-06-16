@@ -14,6 +14,7 @@ import Login from './pages/Login'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { CreditCard } from 'lucide-react'
 import { useInactivity } from './hooks/useInactivity'
+import PaymentScreen from './pages/PaymentScreen'
 
 const HomeIcon = ({ filled }) => (
   <svg width="22" height="22" viewBox="0 0 24 24" fill={filled ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2">
@@ -112,6 +113,7 @@ function AppRoutes() {
         <Route path="/more" element={<More />} />
         <Route path="/reports" element={<Reports />} />
         <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="/loans/:id/pay" element={<PaymentScreen />} />
       </Routes>
       <BottomNav />
     </div>

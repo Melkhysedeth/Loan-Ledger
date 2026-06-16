@@ -3,19 +3,22 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../db/supabase'
 import { formatCOP, parseCOP } from '../utils/format'
 import { calcInterest, calcTotalLoan } from '../utils/loanCalc'
-import { useAuth } from '../context/AuthContext'
+import { useFormPersist } from '../hooks/useFormPersist'
 import { ChevronLeft } from 'lucide-react'
 
 const initialLoan = {
     amount: '', rate: '', frequency: 'mensual',
     startDate: '', firstPaymentDate: '', notes: '',
-    interestType: 'fixed'
+    interestType: 'fixed', numPayments: ''
 }
+
+// Estado del cliente seleccionado también se persiste por separado
+// porque es un objeto, no un campo de texto
+const SELECTED_CLIENT_KEY = 'new-loan-client'
 
 export default function NewLoan() {
     const navigate = useNavigate()
     const [searchParams] = useSearchParams()
-    const { user } = useAuth()
 
     const [query, setQuery] = useState('')
     const [results, setResults] = useState([])
@@ -29,12 +32,33 @@ export default function NewLoan() {
     const numPayments = parseInt(loan.numPayments) || 0
     const preview = amount && rate ? calcTotalLoan(amount, rate, numPayments, loan.frequency) : null
 
-    // Preseleccionar cliente si viene de ClientDetail
+    // Persistir campos del préstamo
+    const { clearPersisted: clearLoanForm } = useFormPersist(
+        'new-loan-form',
+        loan,
+        setLoan,
+        { empty: initialLoan }
+    )
+
+    // Restaurar cliente seleccionado desde sessionStorage
+    useEffect(() => {
+        try {
+            const saved = sessionStorage.getItem(SELECTED_CLIENT_KEY)
+            if (saved) setSelectedClient(JSON.parse(saved))
+        } catch { /* noop */ }
+    }, [])
+
+    // Preseleccionar cliente si viene de ClientDetail o NewClient
     useEffect(() => {
         const clientId = searchParams.get('clientId')
         if (clientId) {
             supabase.from('clients').select('*').eq('id', clientId).single()
-                .then(({ data }) => { if (data) setSelectedClient(data) })
+                .then(({ data }) => {
+                    if (data) {
+                        setSelectedClient(data)
+                        try { sessionStorage.setItem(SELECTED_CLIENT_KEY, JSON.stringify(data)) } catch { /* noop */ }
+                    }
+                })
         }
     }, [])
 
@@ -55,6 +79,7 @@ export default function NewLoan() {
 
     function selectClient(client) {
         setSelectedClient(client)
+        try { sessionStorage.setItem(SELECTED_CLIENT_KEY, JSON.stringify(client)) } catch { /* noop */ }
         setQuery('')
         setResults([])
         setSearched(false)
@@ -62,7 +87,9 @@ export default function NewLoan() {
 
     function clearClient() {
         setSelectedClient(null)
+        try { sessionStorage.removeItem(SELECTED_CLIENT_KEY) } catch { /* noop */ }
         setLoan(initialLoan)
+        clearLoanForm()
     }
 
     function handleLoanChange(e) {
@@ -72,6 +99,11 @@ export default function NewLoan() {
     function handleAmountChange(e) {
         const raw = parseCOP(e.target.value)
         setLoan({ ...loan, amount: raw ? formatCOP(raw) : '' })
+    }
+
+    function clearAll() {
+        clearLoanForm()
+        try { sessionStorage.removeItem(SELECTED_CLIENT_KEY) } catch { /* noop */ }
     }
 
     async function handleSubmit() {
@@ -94,6 +126,8 @@ export default function NewLoan() {
                 notes: loan.notes,
                 status: 'active',
             })
+            // Limpiar todo al guardar con éxito
+            clearAll()
             navigate('/loans')
         } finally {
             setSaving(false)

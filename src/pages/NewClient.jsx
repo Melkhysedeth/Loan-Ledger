@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { supabase } from '../db/supabase'
+import { useFormPersist } from '../hooks/useFormPersist'
 import {
   ChevronLeft, User, IdCard, MapPin, FileText, Info, ArrowRight, Save,
 } from 'lucide-react'
@@ -16,8 +17,19 @@ export default function NewClient() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
+  // Persistir solo cuando es creación nueva, no edición
+  // (edición siempre carga desde Supabase así que no necesita persistencia)
+  const { clearPersisted } = useFormPersist(
+    'new-client-form',
+    form,
+    setForm,
+    { empty, exclude: [] }
+  )
+
   useEffect(() => {
     if (isEditing) {
+      // En edición: limpiar cualquier borrador guardado y cargar desde BD
+      clearPersisted()
       supabase.from('clients').select('*').eq('id', id).single()
         .then(({ data }) => { if (data) setForm(data) })
     }
@@ -48,8 +60,6 @@ export default function NewClient() {
       if (error) { setError(error.message); return }
       navigate('/clients')
     } else {
-      const { data: { user } } = await supabase.auth.getUser()
-
       const { data, error } = await supabase.from('clients').insert({
         name: form.name,
         phone: form.phone,
@@ -61,6 +71,9 @@ export default function NewClient() {
 
       setSaving(false)
       if (error) { setError(error.message); return }
+
+      // Limpiar borrador guardado al guardar con éxito
+      clearPersisted()
 
       const fromLoan = searchParams.get('from') === 'loan'
       navigate(fromLoan ? `/new-loan?clientId=${data.id}` : '/clients')
