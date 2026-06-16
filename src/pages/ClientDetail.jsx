@@ -57,10 +57,20 @@ export default function ClientDetail() {
     </div>
   )
 
-  const activeLoans = loans.filter(l => l.status === 'active' || l.status === 'frozen')
+  const activeLoans = loans.filter(l => l.status !== 'paid')
   const paidLoans = loans.filter(l => l.status === 'paid')
-  const totalPending = activeLoans.reduce((s, l) => s + (l.amount || 0), 0)
+
+  // Total prestado = suma de montos originales de préstamos no liquidados
+  const totalPrestado = activeLoans.reduce((s, l) => s + (l.amount || 0), 0)
+
+  // Total cobrado = suma de todos los pagos recibidos
   const totalCollected = payments.reduce((s, p) => s + (p.total_paid || 0), 0)
+
+  // Capital ya pagado = suma de abonos a capital
+  const totalCapitalPagado = payments.reduce((s, p) => s + (p.capital_paid || 0), 0)
+
+  // Saldo pendiente real = lo que falta por pagar de capital
+  const totalPending = totalPrestado - totalCapitalPagado
   const ranking = client.ranking_override || calcRanking(payments, loans)
   const rl = RANKING_LABELS[ranking] || RANKING_LABELS.nuevo
   const lastLoan = loans[0]
@@ -128,7 +138,7 @@ export default function ClientDetail() {
 
       {/* ── Stats ── */}
       <div className="grid grid-cols-2 gap-3 mx-4 mb-4">
-        <StatCard label="Total prestado" value={formatCOP(totalPending)} accent="text-gray-900 dark:text-white" />
+        <StatCard label="Total prestado" value={formatCOP(totalPrestado)} accent="text-gray-900 dark:text-white" />
         <StatCard label="Total cobrado" value={formatCOP(totalCollected)} accent="text-green-600 dark:text-green-400" sub={`${payments.length} pagos`} />
         <StatCard label="Saldo pendiente" value={formatCOP(totalPending)} accent="text-amber-600 dark:text-amber-400" sub={`${activeLoans.length} préstamo${activeLoans.length !== 1 ? 's' : ''}`} />
         <StatCard label="Préstamos" value={loans.length} accent="text-blue-600 dark:text-blue-400" sub={paidLoans.length > 0 ? `${paidLoans.length} liquidados` : 'Activo'} />

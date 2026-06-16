@@ -4,7 +4,7 @@ import { supabase } from '../db/supabase'
 import { useAuth } from '../context/AuthContext'
 import { formatCOP } from '../utils/format'
 import { calcVariableInterest } from '../utils/loanCalc'
-import { calcTotalLoan, calcNextPaymentDate, classifyLoan } from '../utils/loanCalc'
+import { calcTotalLoan, calcNextPaymentDate, classifyLoan, calcMora } from '../utils/loanCalc'
 import { ChevronLeft, DollarSign, Snowflake, CheckCircle, AlertCircle, Pencil, X, Handshake, Calendar, Percent, RefreshCw, CreditCard } from 'lucide-react'
 
 export default function LoanDetail() {
@@ -48,6 +48,9 @@ export default function LoanDetail() {
     const initials = (client?.name || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
     const isOverdue = classification === 'overdue' || loan.status === 'overdue'
     const isPaid = loan.status === 'paid'
+    const mora = (!isPaid && loan.status !== 'frozen')
+        ? calcMora(loan, paymentsMade, totalPaid)
+        : { inMora: false }
 
     const STATUS = {
         active: { label: 'Activo', color: 'text-green-400 bg-green-900/30', dot: 'bg-green-400' },
@@ -142,7 +145,19 @@ export default function LoanDetail() {
                     <DetailCell Icon={Percent} label="Tasa de interés" value={`${loan.interest_rate}%`} />
                     <DetailCell Icon={Calendar} label="Fecha inicio" value={loan.start_date ? new Date(loan.start_date).toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'} />
                     <DetailCell Icon={RefreshCw} label="Frecuencia" value={loan.frequency} />
-                    <DetailCell Icon={Calendar} label="Primer pago" value={loan.first_payment_date ? new Date(loan.first_payment_date).toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'} />
+                    <DetailCell
+                        Icon={Calendar}
+                        label="Próximo pago"
+                        value={(() => {
+                            const fecha = paymentsMade === 0
+                                ? (loan.first_payment_date ? new Date(loan.first_payment_date) : null)
+                                : calcNextPaymentDate(loan.first_payment_date, loan.frequency, paymentsMade)
+                            return fecha
+                                ? fecha.toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' })
+                                : '—'
+                        })()}
+                        valueColor={isPaid ? 'text-gray-400' : isOverdue ? 'text-red-500' : 'text-gray-800 dark:text-gray-100'}
+                    />
                     <DetailCell
                         Icon={CreditCard}
                         label="Tipo de interés"
@@ -158,6 +173,35 @@ export default function LoanDetail() {
                     </div>
                 )}
             </div>
+
+            {/* Tarjeta mora */}
+            {mora.inMora && (
+                <div className="mx-4 border border-red-200 dark:border-red-900/50 bg-white dark:bg-gray-800 rounded-2xl p-4 mb-3 shadow-sm">
+                    <div className="flex items-center gap-2 mb-3">
+                        <AlertCircle size={15} className="text-red-400 shrink-0" />
+                        <p className="text-sm font-bold text-red-500 dark:text-red-400">Préstamo en mora</p>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                        <div className="border border-red-100 dark:border-red-900/40 rounded-xl p-3 text-center">
+                            <p className="text-[10px] text-gray-400 mb-1">Días en mora</p>
+                            <p className="text-lg font-bold text-red-500 dark:text-red-400">{mora.diasMora}</p>
+                            <p className="text-[10px] text-gray-400">días</p>
+                        </div>
+                        <div className="border border-red-100 dark:border-red-900/40 rounded-xl p-3 text-center">
+                            <p className="text-[10px] text-gray-400 mb-1">Intereses vencidos</p>
+                            <p className="text-lg font-bold text-red-500 dark:text-red-400">
+                                {mora.mesesEnMora % 1 === 0 ? mora.mesesEnMora : mora.mesesEnMora.toFixed(1)}
+                            </p>
+                            <p className="text-[10px] text-gray-400">meses</p>
+                        </div>
+                        <div className="border border-red-100 dark:border-red-900/40 rounded-xl p-3 text-center">
+                            <p className="text-[10px] text-gray-400 mb-1">Valor que debe</p>
+                            <p className="text-base font-bold text-red-500 dark:text-red-400">{formatCOP(mora.valorInteresesDebe)}</p>
+                            <p className="text-[10px] text-gray-400">en intereses</p>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Resumen de pagos */}
             <div className="mx-4 bg-white dark:bg-gray-800 rounded-2xl p-4 mb-3 shadow-sm">

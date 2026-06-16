@@ -94,3 +94,66 @@ export function calcVariableInterest(amount, capitalPaid, ratePercent, frequency
     const remaining = amount - capitalPaid
     return calcInterest(remaining, ratePercent, frequency)
 }
+
+/**
+ * Calcula la situación de mora de un préstamo.
+ * @param {object} loan          - Objeto del préstamo (first_payment_date, frequency, interest_type, interest_rate, interest_amount, amount)
+ * @param {number} paymentsMade  - Número de pagos realizados
+ * @param {number} totalCapitalPaid - Capital total pagado hasta ahora
+ * @returns {object} { inMora, diasMora, periodosEnMora, mesesEnMora, valorInteresesDebe }
+ */
+export function calcMora(loan, paymentsMade, totalCapitalPaid = 0) {
+    if (!loan.first_payment_date) {
+        return { inMora: false, diasMora: 0, periodosEnMora: 0, mesesEnMora: 0, valorInteresesDebe: 0 }
+    }
+
+    const today = new Date()
+    const todayClean = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+
+    // Fecha del pago más antiguo sin pagar
+    const fechaMasAntigua = calcNextPaymentDate(loan.first_payment_date, loan.frequency, paymentsMade)
+    const fechaMasAntiguaClean = new Date(fechaMasAntigua.getFullYear(), fechaMasAntigua.getMonth(), fechaMasAntigua.getDate())
+
+    // Días de mora: desde el día SIGUIENTE a la fecha vencida más antigua
+    const diffMs = todayClean - fechaMasAntiguaClean
+    const diffDias = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+
+    // Solo está en mora si la fecha ya pasó (diffDias > 0 significa que ya era ayer o antes)
+    if (diffDias <= 0) {
+        return { inMora: false, diasMora: 0, periodosEnMora: 0, mesesEnMora: 0, valorInteresesDebe: 0 }
+    }
+
+    // Cuántos periodos han vencido desde el primer pago hasta hoy
+    const diasPorPeriodo = loan.frequency === 'quincenal' ? 15 : 30
+    const base = new Date(loan.first_payment_date)
+    const baseClean = new Date(base.getFullYear(), base.getMonth(), base.getDate())
+    const diasTranscurridos = Math.floor((todayClean - baseClean) / (1000 * 60 * 60 * 24))
+    const periodosVencidos = Math.floor(diasTranscurridos / diasPorPeriodo) + 1
+    const periodosEnMora = Math.max(0, periodosVencidos - paymentsMade)
+
+    // Meses de interés que debe (quincenal: 2 quincenas = 1 mes)
+    const mesesEnMora = loan.frequency === 'quincenal' ? periodosEnMora / 2 : periodosEnMora
+
+    // Valor en dinero de los intereses que debe
+    let valorInteresesDebe = 0
+    if (loan.interest_type === 'variable') {
+        // Interés mensual sobre el saldo pendiente actual
+        const interestMensual = Math.round(((loan.amount - totalCapitalPaid) * loan.interest_rate) / 100)
+        valorInteresesDebe = Math.round(interestMensual * mesesEnMora)
+    } else {
+        // interest_amount ya es el interés por periodo (quincenal o mensual)
+        // Para mora usamos el interés mensual: quincenal lo duplicamos
+        const interestMensual = loan.frequency === 'quincenal'
+            ? (loan.interest_amount || 0) * 2
+            : (loan.interest_amount || 0)
+        valorInteresesDebe = Math.round(interestMensual * mesesEnMora)
+    }
+
+    return {
+        inMora: true,
+        diasMora: diffDias,
+        periodosEnMora,
+        mesesEnMora,
+        valorInteresesDebe,
+    }
+}
