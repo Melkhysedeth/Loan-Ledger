@@ -9,7 +9,7 @@ import ContextMenu from '../components/ContextMenu'
 import ConfirmModal from '../components/ConfirmModal'
 
 const STATUS_CONFIG = {
-    active: { label: 'Activo', color: 'text-green-600 bg-green-50 dark:bg-green-900/30 dark:text-green-400', dot: 'bg-green-500', Icon: CheckCircle },
+    active: { label: 'Al día', color: 'text-green-600 bg-green-50 dark:bg-green-900/30 dark:text-green-400', dot: 'bg-green-500', Icon: CheckCircle },
     frozen: { label: 'Congelado', color: 'text-blue-600 bg-blue-50 dark:bg-blue-900/30 dark:text-blue-400', dot: 'bg-blue-500', Icon: Clock },
     overdue: { label: 'En mora', color: 'text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-400', dot: 'bg-red-500', Icon: AlertCircle },
     paid: { label: 'Pagado', color: 'text-gray-500 bg-gray-100 dark:bg-gray-700 dark:text-gray-400', dot: 'bg-gray-400', Icon: CheckCircle },

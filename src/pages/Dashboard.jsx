@@ -36,6 +36,7 @@ export default function Dashboard() {
         pendingBalance: 0,
         activeClients: 0,
         activeLoans: 0,
+        onTime: 0,
         overdue: [],
         dueSoon: [],
         monthlyData: [],
@@ -66,6 +67,7 @@ export default function Dashboard() {
             const allPayments = payments || []
 
             const activeLoans = allLoans.filter(l => ['active', 'overdue', 'frozen', 'agreement'].includes(l.status))
+            const onTimeLoans = allLoans.filter(l => ['active', 'frozen', 'agreement'].includes(l.status))
             const totalLent = activeLoans.reduce((s, l) => s + (l.amount || 0), 0)
 
             const collectedThisMonth = allPayments
@@ -116,7 +118,7 @@ export default function Dashboard() {
             const attention = [
                 ...overdue.map(l => ({ ...l, tag: 'overdue' })),
                 ...dueSoon.map(l => ({ ...l, tag: 'dueSoon' })),
-            ].slice(0, 5)
+            ].slice(0, 4)
 
             // Distribución de estado para la dona
             const statusCounts = allLoans.reduce((acc, l) => {
@@ -139,7 +141,7 @@ export default function Dashboard() {
                 .sort((a, b) => b.count - a.count)
 
             // Pagos recientes (últimos 5) enriquecidos con nombre de cliente
-            const recentPayments = allPayments.slice(0, 5).map(p => {
+            const recentPayments = allPayments.slice(0, 4).map(p => {
                 const loan = allLoans.find(l => l.id === p.loan_id)
                 const client = loan ? allClients.find(c => c.id === loan.client_id) : null
                 return { ...p, client, loan }
@@ -147,7 +149,7 @@ export default function Dashboard() {
 
             setStats({
                 totalLent, collectedThisMonth, pendingBalance, activeClients,
-                activeLoans: activeLoans.length, overdue, dueSoon, monthlyData,
+                activeLoans: activeLoans.length, onTime: onTimeLoans.length, overdue, dueSoon, monthlyData,
                 attention, statusDistribution, recentPayments,
                 agreementCount, frozenCount, paidCount,
             })
@@ -157,7 +159,7 @@ export default function Dashboard() {
 
     const {
         totalLent, collectedThisMonth, pendingBalance, activeClients,
-        activeLoans, overdue, dueSoon, monthlyData, attention,
+        activeLoans, onTime, overdue, dueSoon, monthlyData, attention,
         statusDistribution, recentPayments,
         agreementCount, frozenCount, paidCount,
     } = stats
@@ -217,13 +219,18 @@ export default function Dashboard() {
             </Carousel>
 
             {/* Resumen rápido: préstamos activos, en mora, próximos a vencer */}
-            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm px-4 py-3 flex gap-4 overflow-x-auto no-scrollbar">
-                <QuickStat label="Activos" value={activeLoans} color="text-blue-500" />
-                <QuickStat label="En mora" value={overdue.length} color="text-red-500" />
-                <QuickStat label="Por vencer" value={dueSoon.length} color="text-amber-500" />
-                <QuickStat label="Acuerdo" value={agreementCount} color="text-orange-500" />
-                <QuickStat label="Congelados" value={frozenCount} color="text-purple-500" />
-                <QuickStat label="Liquidados" value={paidCount} color="text-green-500" />
+            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm px-4 pt-3 pb-2">
+                <div className="flex gap-4 overflow-x-auto no-scrollbar">
+                    <QuickStat label="Al día" value={onTime} color="text-blue-500" />
+                    <QuickStat label="En mora" value={overdue.length} color="text-red-500" />
+                    <QuickStat label="Por vencer" value={dueSoon.length} color="text-amber-500" />
+                    <QuickStat label="Acuerdo" value={agreementCount} color="text-orange-500" />
+                    <QuickStat label="Congelados" value={frozenCount} color="text-purple-500" />
+                    <QuickStat label="Liquidados" value={paidCount} color="text-green-500" />
+                </div>
+                <p className="text-[11px] text-gray-400 text-center mt-2 pt-2 border-t border-gray-100 dark:border-gray-700">
+                    Total de préstamos activos: <span className="font-semibold text-gray-500 dark:text-gray-300">{activeLoans}</span>
+                </p>
             </div>
 
             {/* Carrusel: gráfica mensual + dona de distribución */}
