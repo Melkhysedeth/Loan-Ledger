@@ -33,20 +33,38 @@ export default function Loans() {
             supabase.from('payments').select('*'),
         ])
 
-        // Detectar y actualizar préstamos vencidos
-        const toUpdate = (allLoans || []).filter(loan => {
+        const loansList = allLoans || []
+        const paymentsList = allPayments || []
+
+        // FIX: detectar préstamos que pasan de 'active' a 'overdue' (vencidos)
+        const toMarkOverdue = loansList.filter(loan => {
             if (loan.status !== 'active') return false
-            const paymentsMade = (allPayments || []).filter(p => p.loan_id === loan.id).length
+            const paymentsMade = paymentsList.filter(p => p.loan_id === loan.id).length
             const classification = classifyLoan(loan.first_payment_date, loan.frequency, paymentsMade)
             return classification === 'overdue'
         })
 
-        if (toUpdate.length > 0) {
-            await Promise.all(
-                toUpdate.map(loan =>
+        // FIX: detectar préstamos marcados como 'overdue' que YA SE PUSIERON AL DÍA
+        // (el cliente pagó y la clasificación actual ya no es 'overdue').
+        // Sin esto, el status quedaba pegado en 'overdue' para siempre.
+        const toMarkActive = loansList.filter(loan => {
+            if (loan.status !== 'overdue') return false
+            const paymentsMade = paymentsList.filter(p => p.loan_id === loan.id).length
+            const classification = classifyLoan(loan.first_payment_date, loan.frequency, paymentsMade)
+            return classification !== 'overdue'
+        })
+
+        const needsUpdate = toMarkOverdue.length > 0 || toMarkActive.length > 0
+
+        if (needsUpdate) {
+            await Promise.all([
+                ...toMarkOverdue.map(loan =>
                     supabase.from('loans').update({ status: 'overdue' }).eq('id', loan.id)
-                )
-            )
+                ),
+                ...toMarkActive.map(loan =>
+                    supabase.from('loans').update({ status: 'active' }).eq('id', loan.id)
+                ),
+            ])
             // Recargar con los status actualizados
             const { data: updatedLoans } = await supabase.from('loans').select('*').order('created_at', { ascending: false })
             const enriched = (updatedLoans || []).map(loan => ({
@@ -54,18 +72,18 @@ export default function Loans() {
                 client: (allClients || []).find(c => c.id === loan.client_id),
             }))
             setLoans(enriched)
-            setPayments(allPayments || [])
+            setPayments(paymentsList)
             setLoading(false)
             return
         }
 
-        const enriched = (allLoans || []).map(loan => ({
+        const enriched = loansList.map(loan => ({
             ...loan,
             client: (allClients || []).find(c => c.id === loan.client_id),
         }))
 
         setLoans(enriched)
-        setPayments(allPayments || [])
+        setPayments(paymentsList)
         setLoading(false)
     }
 
