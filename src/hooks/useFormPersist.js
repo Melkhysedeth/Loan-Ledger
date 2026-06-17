@@ -11,15 +11,15 @@ import { useEffect } from 'react'
  * @param {any}    options.empty   - El estado vacío inicial para comparar al limpiar
  * @param {string[]} options.exclude - Campos a NO persistir (ej: passwords, referencias de pago)
  */
-export function useFormPersist(key, values, setValues, { empty = {}, exclude = [] } = {}) {
+export function useFormPersist(key, values, setValues, { empty = {}, exclude = [], skip = false } = {}) {
 
     // Al montar: restaurar si hay datos guardados
     useEffect(() => {
+        if (skip) return
         try {
             const saved = sessionStorage.getItem(key)
             if (saved) {
                 const parsed = JSON.parse(saved)
-                // Solo restaurar si tiene algún campo con valor real
                 const hasData = Object.entries(parsed).some(([k, v]) =>
                     !exclude.includes(k) && v !== '' && v !== null && v !== undefined
                 )
@@ -32,11 +32,11 @@ export function useFormPersist(key, values, setValues, { empty = {}, exclude = [
 
     // Al cambiar valores: guardar (excluyendo campos sensibles)
     useEffect(() => {
+        if (skip) return
         try {
             const toSave = Object.fromEntries(
                 Object.entries(values).filter(([k]) => !exclude.includes(k))
             )
-            // No guardar si es exactamente el estado vacío inicial
             const isEmpty = Object.keys(empty).every(k => values[k] === empty[k])
             if (isEmpty) {
                 sessionStorage.removeItem(key)
@@ -46,7 +46,7 @@ export function useFormPersist(key, values, setValues, { empty = {}, exclude = [
         } catch {
             // sessionStorage lleno o bloqueado, ignorar
         }
-    }, [values])
+    }, [values, skip])
 
     // Función para limpiar manualmente (llamar al guardar con éxito)
     function clearPersisted() {

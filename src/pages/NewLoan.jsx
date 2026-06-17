@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../db/supabase'
 import { formatCOP, parseCOP } from '../utils/format'
 import { calcInterest, calcTotalLoan } from '../utils/loanCalc'
 import { useFormPersist } from '../hooks/useFormPersist'
 import { ChevronLeft } from 'lucide-react'
+import { useNavigate, useSearchParams, useLocation } from 'react-router-dom'
 
 const initialLoan = {
     amount: '', rate: '', frequency: 'mensual',
@@ -19,6 +19,9 @@ const SELECTED_CLIENT_KEY = 'new-loan-client'
 export default function NewLoan() {
     const navigate = useNavigate()
     const [searchParams] = useSearchParams()
+    const location = useLocation()
+    const editLoan = location.state?.editLoan || null
+    const isEditing = !!editLoan
 
     const [query, setQuery] = useState('')
     const [results, setResults] = useState([])
@@ -37,16 +40,40 @@ export default function NewLoan() {
         'new-loan-form',
         loan,
         setLoan,
-        { empty: initialLoan }
+        { empty: initialLoan, skip: isEditing }
     )
 
-    // Restaurar cliente seleccionado desde sessionStorage
+    // Restaurar cliente seleccionado desde sessionStorage (solo si NO estamos editando)
     useEffect(() => {
+        if (isEditing) return
         try {
             const saved = sessionStorage.getItem(SELECTED_CLIENT_KEY)
             if (saved) setSelectedClient(JSON.parse(saved))
         } catch { /* noop */ }
     }, [])
+
+    // Precargar formulario si venimos en modo edición
+    useEffect(() => {
+        if (!editLoan) return
+
+        setLoan({
+            amount: editLoan.amount ? formatCOP(editLoan.amount) : '',
+            rate: editLoan.interest_rate?.toString() || '',
+            frequency: editLoan.frequency || 'mensual',
+            startDate: editLoan.start_date || '',
+            firstPaymentDate: editLoan.first_payment_date || '',
+            notes: editLoan.notes || '',
+            interestType: editLoan.interest_type || 'fixed',
+            numPayments: editLoan.num_payments?.toString() || '',
+        })
+
+        // El préstamo trae client_id, pero no el objeto cliente completo —
+        // lo traemos para poder mostrarlo en la sección "Cliente"
+        supabase.from('clients').select('*').eq('id', editLoan.client_id).single()
+            .then(({ data }) => {
+                if (data) setSelectedClient(data)
+            })
+    }, [editLoan])
 
     // Preseleccionar cliente si viene de ClientDetail o NewClient
     useEffect(() => {
@@ -114,7 +141,7 @@ export default function NewLoan() {
         }
         setSaving(true)
         try {
-            await supabase.from('loans').insert({
+            const payload = {
                 client_id: selectedClient.id,
                 interest_type: loan.interestType,
                 amount,
@@ -124,9 +151,14 @@ export default function NewLoan() {
                 start_date: loan.startDate,
                 first_payment_date: loan.firstPaymentDate || null,
                 notes: loan.notes,
-                status: 'active',
-            })
-            // Limpiar todo al guardar con éxito
+            }
+
+            if (isEditing) {
+                await supabase.from('loans').update(payload).eq('id', editLoan.id)
+            } else {
+                await supabase.from('loans').insert({ ...payload, status: 'active' })
+            }
+
             clearAll()
             navigate('/loans')
         } finally {
@@ -140,7 +172,7 @@ export default function NewLoan() {
                 <button onClick={() => navigate(-1)} className="text-blue-400">
                     <ChevronLeft size={24} />
                 </button>
-                <h1 className="text-2xl font-bold text-gray-800 dark:text-white">Nuevo Préstamo</h1>
+                <h1 className="text-2xl font-bold text-gray-800 dark:text-white">{isEditing ? 'Editar Préstamo' : 'Nuevo Préstamo'}</h1>
             </div>
 
             {/* CLIENTE */}
@@ -262,7 +294,7 @@ export default function NewLoan() {
                         disabled={saving}
                         className="w-full bg-blue-600 text-white font-semibold py-3 rounded-2xl shadow active:scale-95 transition disabled:opacity-50"
                     >
-                        {saving ? 'Guardando...' : 'Guardar Préstamo'}
+                        {saving ? 'Guardando...' : (isEditing ? 'Guardar cambios' : 'Guardar Préstamo')}
                     </button>
                 </>
             )}

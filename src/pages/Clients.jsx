@@ -4,6 +4,9 @@ import { supabase } from '../db/supabase'
 import { formatCOP } from '../utils/format'
 import { calcRanking, RANKING_LABELS, RANKING_OPTIONS } from '../utils/ranking'
 import { calcNextPaymentDate, classifyLoan } from '../utils/loanCalc'
+import useLongPress from '../hooks/useLongPress'
+import ContextMenu from '../components/ContextMenu'
+import ConfirmModal from '../components/ConfirmModal'
 import {
   Users, UserPlus, Search, SlidersHorizontal, ChevronRight, Plus,
 } from 'lucide-react'
@@ -105,6 +108,15 @@ export default function Clients() {
     setLoading(false)
   }
 
+  function handleEditClient(client) {
+    navigate('/clients/new', { state: { editClient: client } })
+  }
+
+  async function handleDeleteClient(clientId) {
+    await supabase.from('clients').delete().eq('id', clientId)
+    await loadClients()
+  }
+
   const filtered = clients.filter(c => {
     const matchesSearch =
       c.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -189,6 +201,8 @@ export default function Clients() {
             client={client}
             onRefresh={loadClients}
             onPress={() => navigate(`/clients/${client.id}/detail`)}
+            onEdit={handleEditClient}
+            onDeleted={handleDeleteClient}
           />
         ))}
       </div>
@@ -196,10 +210,39 @@ export default function Clients() {
   )
 }
 
-function ClientCard({ client, onRefresh, onPress }) {
+function ClientCard({ client, onRefresh, onPress, onEdit, onDeleted }) {
   const ranking = RANKING_LABELS[client.ranking] || RANKING_LABELS.nuevo
   const status = CLIENT_STATUS_LABELS[client.clientStatus] || CLIENT_STATUS_LABELS.none
   const [editingRanking, setEditingRanking] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [anchorRect, setAnchorRect] = useState(null)
+
+  const longPress = useLongPress((rect) => {
+    setAnchorRect(rect)
+    setMenuOpen(true)
+  }, 500)
+
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [blockedOpen, setBlockedOpen] = useState(false)
+
+  function handleEdit() {
+    setMenuOpen(false)
+    onEdit(client)
+  }
+
+  function handleDeleteRequest() {
+    setMenuOpen(false)
+    if (client.loans.length > 0) {
+      setBlockedOpen(true)
+    } else {
+      setConfirmOpen(true)
+    }
+  }
+
+  async function handleConfirmDelete() {
+    await onDeleted(client.id)
+    setConfirmOpen(false)
+  }
 
   async function handleRankingChange(value) {
     await supabase.from('clients').update({ ranking_override: value }).eq('id', client.id)
@@ -210,84 +253,107 @@ function ClientCard({ client, onRefresh, onPress }) {
   const isOverdue = client.clientStatus === 'overdue'
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm p-4 active:scale-95 transition">
-      <div className="flex justify-between items-start mb-2" onClick={onPress}>
-        <div>
-          <p className="font-bold text-gray-800 dark:text-gray-100">{client.name}</p>
-          <p className="text-xs text-gray-400">{client.phone} {client.cedula ? `· ${client.cedula}` : ''}</p>
-        </div>
-        <span className={`text-xs font-semibold px-2 py-1 rounded-full flex items-center gap-1 ${status.color}`}>
-          {client.clientStatus !== 'none' && (
-            <span className={`w-1.5 h-1.5 rounded-full ${client.clientStatus === 'overdue' ? 'bg-red-500'
-              : client.clientStatus === 'ok' ? 'bg-green-500'
-                : 'bg-amber-500'
-              }`} />
-          )}
-          {status.label}
-        </span>
-      </div>
-
-      <div className="flex justify-between text-sm mb-1" onClick={onPress}>
-        <div>
-          <p className="text-xs text-gray-400">Saldo pendiente</p>
-          <p className="font-semibold text-gray-800 dark:text-gray-100">{formatCOP(client.totalPending)}</p>
-        </div>
-        <div className="text-right">
-          <p className="text-xs text-gray-400">Préstamos activos</p>
-          <p className="font-semibold text-gray-800 dark:text-gray-100">{client.activeLoans.length}</p>
-        </div>
-      </div>
-
-      {client.activeLoans.length > 0 && (
-        <div className="flex justify-between items-end text-sm pt-3 mt-2 border-t border-gray-100 dark:border-gray-700" onClick={onPress}>
+    <>
+      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm p-4 active:scale-95 transition" {...longPress}>
+        <div className="flex justify-between items-start mb-2" onClick={onPress}>
           <div>
-            <p className="text-xs text-gray-400">Total prestado</p>
-            <p className="font-semibold text-gray-700 dark:text-gray-200">{formatCOP(client.totalLoaned)}</p>
+            <p className="font-bold text-gray-800 dark:text-gray-100">{client.name}</p>
+            <p className="text-xs text-gray-400">{client.phone} {client.cedula ? `· ${client.cedula}` : ''}</p>
           </div>
+          <span className={`text-xs font-semibold px-2 py-1 rounded-full flex items-center gap-1 ${status.color}`}>
+            {client.clientStatus !== 'none' && (
+              <span className={`w-1.5 h-1.5 rounded-full ${client.clientStatus === 'overdue' ? 'bg-red-500'
+                : client.clientStatus === 'ok' ? 'bg-green-500'
+                  : 'bg-amber-500'
+                }`} />
+            )}
+            {status.label}
+          </span>
+        </div>
+
+        <div className="flex justify-between text-sm mb-1" onClick={onPress}>
           <div>
-            <p className="text-xs text-gray-400">Pagado</p>
-            <p className="font-semibold text-green-600 dark:text-green-400">{formatCOP(client.totalPaid)}</p>
+            <p className="text-xs text-gray-400">Saldo pendiente</p>
+            <p className="font-semibold text-gray-800 dark:text-gray-100">{formatCOP(client.totalPending)}</p>
           </div>
-          <div className="text-right flex items-center gap-1">
+          <div className="text-right">
+            <p className="text-xs text-gray-400">Préstamos activos</p>
+            <p className="font-semibold text-gray-800 dark:text-gray-100">{client.activeLoans.length}</p>
+          </div>
+        </div>
+
+        {client.activeLoans.length > 0 && (
+          <div className="flex justify-between items-end text-sm pt-3 mt-2 border-t border-gray-100 dark:border-gray-700" onClick={onPress}>
             <div>
-              <p className="text-xs text-gray-400">{isOverdue ? 'Vencido desde' : 'Próximo pago'}</p>
-              <p className={`font-semibold ${isOverdue ? 'text-red-500' : 'text-blue-500 dark:text-blue-400'}`}>
-                {client.nextDate ? client.nextDate.toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
-              </p>
+              <p className="text-xs text-gray-400">Total prestado</p>
+              <p className="font-semibold text-gray-700 dark:text-gray-200">{formatCOP(client.totalLoaned)}</p>
             </div>
-            <ChevronRight size={16} className="text-gray-300 dark:text-gray-600" />
-          </div>
-        </div>
-      )}
-
-      <div className="mt-3 pt-2 border-t border-gray-100 dark:border-gray-700">
-        {editingRanking ? (
-          <div className="flex gap-2 flex-wrap mt-1">
-            {RANKING_OPTIONS.map(r => {
-              const rl = RANKING_LABELS[r]
-              return (
-                <button
-                  key={r}
-                  onClick={() => handleRankingChange(r)}
-                  className={`text-xs px-2 py-1 rounded-full font-semibold border flex items-center gap-1 ${rl.color}`}
-                >
-                  <rl.Icon size={12} /> {rl.label}
-                </button>
-              )
-            })}
-            <button onClick={() => setEditingRanking(false)} className="text-xs text-gray-400 px-2 py-1">Cancelar</button>
-          </div>
-        ) : (
-          <div className="flex items-center justify-between">
-            <span className={`text-xs font-semibold px-2 py-1 rounded-full flex items-center gap-1 ${ranking.color}`}>
-              <ranking.Icon size={12} /> {ranking.label}
-            </span>
-            <button onClick={() => setEditingRanking(true)} className="text-xs text-blue-500">
-              Cambiar ranking
-            </button>
+            <div>
+              <p className="text-xs text-gray-400">Pagado</p>
+              <p className="font-semibold text-green-600 dark:text-green-400">{formatCOP(client.totalPaid)}</p>
+            </div>
+            <div className="text-right flex items-center gap-1">
+              <div>
+                <p className="text-xs text-gray-400">{isOverdue ? 'Vencido desde' : 'Próximo pago'}</p>
+                <p className={`font-semibold ${isOverdue ? 'text-red-500' : 'text-blue-500 dark:text-blue-400'}`}>
+                  {client.nextDate ? client.nextDate.toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+                </p>
+              </div>
+              <ChevronRight size={16} className="text-gray-300 dark:text-gray-600" />
+            </div>
           </div>
         )}
+
+        <div className="mt-3 pt-2 border-t border-gray-100 dark:border-gray-700">
+          {editingRanking ? (
+            <div className="flex gap-2 flex-wrap mt-1">
+              {RANKING_OPTIONS.map(r => {
+                const rl = RANKING_LABELS[r]
+                return (
+                  <button
+                    key={r}
+                    onClick={() => handleRankingChange(r)}
+                    className={`text-xs px-2 py-1 rounded-full font-semibold border flex items-center gap-1 ${rl.color}`}
+                  >
+                    <rl.Icon size={12} /> {rl.label}
+                  </button>
+                )
+              })}
+              <button onClick={() => setEditingRanking(false)} className="text-xs text-gray-400 px-2 py-1">Cancelar</button>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between">
+              <span className={`text-xs font-semibold px-2 py-1 rounded-full flex items-center gap-1 ${ranking.color}`}>
+                <ranking.Icon size={12} /> {ranking.label}
+              </span>
+              <button onClick={() => setEditingRanking(true)} className="text-xs text-blue-500">
+                Cambiar ranking
+              </button>
+            </div>
+          )}
+        </div>
       </div>
-    </div>
+
+      <ContextMenu
+        open={menuOpen}
+        anchorRect={anchorRect}
+        onEdit={handleEdit}
+        onDelete={handleDeleteRequest}
+        onClose={() => setMenuOpen(false)}
+      />
+      <ConfirmModal
+        open={confirmOpen}
+        mode="confirm"
+        message="Esta acción eliminará el cliente de forma permanente. No se puede deshacer."
+        onConfirm={handleConfirmDelete}
+        onClose={() => setConfirmOpen(false)}
+      />
+      <ConfirmModal
+        open={blockedOpen}
+        mode="blocked"
+        message="Este cliente tiene préstamos registrados. Para eliminarlo, primero debes eliminar o resolver sus préstamos asociados."
+        onClose={() => setBlockedOpen(false)}
+      />
+    </>
   )
 }

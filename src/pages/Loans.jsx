@@ -4,6 +4,9 @@ import { supabase } from '../db/supabase'
 import { formatCOP } from '../utils/format'
 import { calcNextPaymentDate, classifyLoan } from '../utils/loanCalc'
 import { Search, AlertCircle, Clock, CheckCircle, CreditCard, Calendar, Plus } from 'lucide-react'
+import useLongPress from '../hooks/useLongPress'
+import ContextMenu from '../components/ContextMenu'
+import ConfirmModal from '../components/ConfirmModal'
 
 const STATUS_CONFIG = {
     active: { label: 'Activo', color: 'text-green-600 bg-green-50 dark:bg-green-900/30 dark:text-green-400', dot: 'bg-green-500', Icon: CheckCircle },
@@ -85,6 +88,15 @@ export default function Loans() {
         setLoans(enriched)
         setPayments(paymentsList)
         setLoading(false)
+    }
+
+    function handleEditLoan(loan) {
+        navigate('/new-loan', { state: { editLoan: loan } })
+    }
+
+    async function handleDeleteLoan(loanId) {
+        await supabase.from('loans').delete().eq('id', loanId)
+        await loadLoans()
     }
 
     // Métricas del header
@@ -194,6 +206,8 @@ export default function Loans() {
                             index={i + 1}
                             payments={payments.filter(p => p.loan_id === loan.id)}
                             onPress={() => navigate(`/loans/${loan.id}`)}
+                            onEdit={handleEditLoan}
+                            onDeleted={handleDeleteLoan}
                         />
                     ))
                 )}
@@ -202,11 +216,39 @@ export default function Loans() {
     )
 }
 
-function LoanCard({ loan, index, payments, onPress }) {
+function LoanCard({ loan, index, payments, onPress, onEdit, onDeleted }) {
     const cfg = STATUS_CONFIG[loan.status] || STATUS_CONFIG.active
     const { Icon } = cfg
     const name = loan.client?.name || 'Cliente'
     const phone = loan.client?.phone || ''
+    const [menuOpen, setMenuOpen] = useState(false)
+    const [anchorRect, setAnchorRect] = useState(null)
+    const [confirmOpen, setConfirmOpen] = useState(false)
+    const [blockedOpen, setBlockedOpen] = useState(false)
+
+    const longPress = useLongPress((rect) => {
+        setAnchorRect(rect)
+        setMenuOpen(true)
+    }, 500)
+
+    function handleEdit() {
+        setMenuOpen(false)
+        onEdit(loan)
+    }
+
+    function handleDeleteRequest() {
+        setMenuOpen(false)
+        if (paymentsMade > 0) {
+            setBlockedOpen(true)
+        } else {
+            setConfirmOpen(true)
+        }
+    }
+
+    async function handleConfirmDelete() {
+        await onDeleted(loan.id)
+        setConfirmOpen(false)
+    }
 
     const paymentsMade = payments.length
     const capitalPaid = payments.reduce((s, p) => s + (p.capital_paid || 0), 0)
@@ -229,47 +271,70 @@ function LoanCard({ loan, index, payments, onPress }) {
     const dateColor = isPaid ? 'text-gray-400' : isOverdue ? 'text-red-500' : 'text-blue-500'
 
     return (
-        <button onClick={onPress} className="w-full bg-white dark:bg-gray-800 rounded-2xl shadow-sm p-4 text-left active:scale-[0.98] transition">
-            {/* Fila superior: código + estado */}
-            <div className="flex justify-between items-center mb-1">
-                <span className="text-xs font-bold text-blue-500">#{String(index).padStart(4, '0')}</span>
-                <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full flex items-center gap-1 ${cfg.color}`}>
-                    <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
-                    {cfg.label}
-                </span>
-            </div>
+        <>
+            <button onClick={onPress} {...longPress} className="w-full bg-white dark:bg-gray-800 rounded-2xl shadow-sm p-4 text-left active:scale-[0.98] transition">
+                {/* Fila superior: código + estado */}
+                <div className="flex justify-between items-center mb-1">
+                    <span className="text-xs font-bold text-blue-500">#{String(index).padStart(4, '0')}</span>
+                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full flex items-center gap-1 ${cfg.color}`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
+                        {cfg.label}
+                    </span>
+                </div>
 
-            {/* Nombre y teléfono + fecha */}
-            <div className="flex justify-between items-start mb-3">
-                <div>
-                    <p className="font-bold text-gray-800 dark:text-gray-100 text-sm">{name}</p>
-                    {phone && <p className="text-xs text-gray-400">{phone}</p>}
+                {/* Nombre y teléfono + fecha */}
+                <div className="flex justify-between items-start mb-3">
+                    <div>
+                        <p className="font-bold text-gray-800 dark:text-gray-100 text-sm">{name}</p>
+                        {phone && <p className="text-xs text-gray-400">{phone}</p>}
+                    </div>
+                    <div className="text-right shrink-0 ml-2">
+                        <p className="text-[10px] text-gray-400">{dateLabel}</p>
+                        <p className={`text-xs font-semibold flex items-center gap-1 justify-end ${dateColor}`}>
+                            <Calendar size={10} /> {dateValue}
+                        </p>
+                    </div>
                 </div>
-                <div className="text-right shrink-0 ml-2">
-                    <p className="text-[10px] text-gray-400">{dateLabel}</p>
-                    <p className={`text-xs font-semibold flex items-center gap-1 justify-end ${dateColor}`}>
-                        <Calendar size={10} /> {dateValue}
-                    </p>
-                </div>
-            </div>
 
-            {/* Métricas: monto, pendiente, cuotas */}
-            <div className="grid grid-cols-3 gap-2">
-                <div>
-                    <p className="text-[10px] text-gray-400">Monto</p>
-                    <p className="text-xs font-bold text-gray-800 dark:text-gray-100">{formatCOP(loan.amount)}</p>
+                {/* Métricas: monto, pendiente, cuotas */}
+                <div className="grid grid-cols-3 gap-2">
+                    <div>
+                        <p className="text-[10px] text-gray-400">Monto</p>
+                        <p className="text-xs font-bold text-gray-800 dark:text-gray-100">{formatCOP(loan.amount)}</p>
+                    </div>
+                    <div>
+                        <p className="text-[10px] text-gray-400">Pendiente</p>
+                        <p className={`text-xs font-bold ${isPaid ? 'text-gray-400' : 'text-amber-500'}`}>{formatCOP(pending)}</p>
+                    </div>
+                    <div>
+                        <p className="text-[10px] text-gray-400">Cuotas</p>
+                        <p className="text-xs font-bold text-gray-800 dark:text-gray-100">
+                            {loan.num_payments ? `${paymentsMade} / ${loan.num_payments}` : `${paymentsMade} pagos`}
+                        </p>
+                    </div>
                 </div>
-                <div>
-                    <p className="text-[10px] text-gray-400">Pendiente</p>
-                    <p className={`text-xs font-bold ${isPaid ? 'text-gray-400' : 'text-amber-500'}`}>{formatCOP(pending)}</p>
-                </div>
-                <div>
-                    <p className="text-[10px] text-gray-400">Cuotas</p>
-                    <p className="text-xs font-bold text-gray-800 dark:text-gray-100">
-                        {loan.num_payments ? `${paymentsMade} / ${loan.num_payments}` : `${paymentsMade} pagos`}
-                    </p>
-                </div>
-            </div>
-        </button>
+            </button>
+
+            <ContextMenu
+                open={menuOpen}
+                anchorRect={anchorRect}
+                onEdit={handleEdit}
+                onDelete={handleDeleteRequest}
+                onClose={() => setMenuOpen(false)}
+            />
+            <ConfirmModal
+                open={confirmOpen}
+                mode="confirm"
+                message="Esta acción eliminará el préstamo de forma permanente. No se puede deshacer."
+                onConfirm={handleConfirmDelete}
+                onClose={() => setConfirmOpen(false)}
+            />
+            <ConfirmModal
+                open={blockedOpen}
+                mode="blocked"
+                message="Este préstamo ya tiene pagos registrados. Si necesitas detenerlo, usa la opción Cancelar dentro del préstamo en vez de eliminarlo."
+                onClose={() => setBlockedOpen(false)}
+            />
+        </>
     )
 }
