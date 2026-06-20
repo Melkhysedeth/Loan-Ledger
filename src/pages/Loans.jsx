@@ -208,6 +208,7 @@ export default function Loans() {
                             onPress={() => navigate(`/loans/${loan.id}`)}
                             onEdit={handleEditLoan}
                             onDeleted={handleDeleteLoan}
+                            even={i % 2 === 0}
                         />
                     ))
                 )}
@@ -216,7 +217,7 @@ export default function Loans() {
     )
 }
 
-function LoanCard({ loan, index, payments, onPress, onEdit, onDeleted }) {
+function LoanCard({ loan, index, payments, onPress, onEdit, onDeleted, even }) {
     const cfg = STATUS_CONFIG[loan.status] || STATUS_CONFIG.active
     const { Icon } = cfg
     const name = loan.client?.name || 'Cliente'
@@ -272,7 +273,7 @@ function LoanCard({ loan, index, payments, onPress, onEdit, onDeleted }) {
 
     return (
         <>
-            <button onClick={onPress} {...longPress} className="w-full bg-white dark:bg-gray-800 rounded-2xl shadow-sm p-4 text-left active:scale-[0.98] transition">
+            <button onClick={onPress} {...longPress} className={`w-full ${even ? 'bg-white dark:bg-gray-800' : 'bg-gray-50 dark:bg-gray-800/60'} rounded-2xl shadow-md p-4 text-left active:scale-[0.98] transition`}>
                 {/* Fila superior: código + estado */}
                 <div className="flex justify-between items-center mb-1">
                     <span className="text-xs font-bold text-blue-500">#{String(index).padStart(4, '0')}</span>

@@ -94,7 +94,6 @@ function AppRoutes() {
       </div>
     </div>
   )
-  // ...resto igual
 
   if (user === null) return <Login />
 

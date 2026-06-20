@@ -195,7 +195,7 @@ export default function Clients() {
       )}
 
       <div className="space-y-3">
-        {filtered.map(client => (
+        {filtered.map((client, i) => (
           <ClientCard
             key={client.id}
             client={client}
@@ -203,6 +203,7 @@ export default function Clients() {
             onPress={() => navigate(`/clients/${client.id}/detail`)}
             onEdit={handleEditClient}
             onDeleted={handleDeleteClient}
+            even={i % 2 === 0}
           />
         ))}
       </div>
@@ -210,7 +211,7 @@ export default function Clients() {
   )
 }
 
-function ClientCard({ client, onRefresh, onPress, onEdit, onDeleted }) {
+function ClientCard({ client, onRefresh, onPress, onEdit, onDeleted, even }) {
   const ranking = RANKING_LABELS[client.ranking] || RANKING_LABELS.nuevo
   const status = CLIENT_STATUS_LABELS[client.clientStatus] || CLIENT_STATUS_LABELS.none
   const [editingRanking, setEditingRanking] = useState(false)
@@ -254,7 +255,7 @@ function ClientCard({ client, onRefresh, onPress, onEdit, onDeleted }) {
 
   return (
     <>
-      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm p-4 active:scale-95 transition" {...longPress}>
+      <div className={`${even ? 'bg-white dark:bg-gray-800' : 'bg-gray-50 dark:bg-gray-800/60'} rounded-2xl shadow-md p-4 active:scale-95 transition`} {...longPress}>
         <div className="flex justify-between items-start mb-2" onClick={onPress}>
           <div>
             <p className="font-bold text-gray-800 dark:text-gray-100">{client.name}</p>
