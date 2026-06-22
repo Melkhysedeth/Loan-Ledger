@@ -105,11 +105,11 @@ export default function Dashboard() {
                 const nStr = nextMonth.toISOString().split('T')[0]
 
                 const cobrado = allPayments
-                    .filter(p => p.date >= dStr && p.date < nStr)
+                    .filter(p => p.date && p.date >= dStr && p.date < nStr)
                     .reduce((s, p) => s + (p.total_paid || 0), 0)
 
                 const prestado = allLoans
-                    .filter(l => l.created_at >= dStr && l.created_at < nStr)
+                    .filter(l => l.start_date && l.start_date >= dStr && l.start_date < nStr)
                     .reduce((s, l) => s + (l.amount || 0), 0)
 
                 return { month: MONTHS[d.getMonth()], cobrado, prestado }

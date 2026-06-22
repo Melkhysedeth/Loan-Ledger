@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../db/supabase'
 import { formatCOP, parseCOP } from '../utils/format'
-import { calcNextPaymentDate, calcVariableInterest, calcMora } from '../utils/loanCalc'
+import { calcNextPaymentDate, calcVariableInterest, calcMora, calcInterestCarryover } from '../utils/loanCalc'
 import { ChevronLeft, Calendar, DollarSign, CheckCircle } from 'lucide-react'
 
 const METHODS = [
@@ -42,6 +42,8 @@ export default function PaymentScreen() {
     const { id } = useParams()
     const navigate = useNavigate()
 
+    const [interestInput, setInterestInput] = useState('')
+
     const [loan, setLoan] = useState(null)
     const [client, setClient] = useState(null)
     const [payments, setPayments] = useState([])
@@ -54,6 +56,9 @@ export default function PaymentScreen() {
     const [notes, setNotes] = useState('')
 
     useEffect(() => { load() }, [id])
+    useEffect(() => {
+        if (loan) setInterestInput(formatCOP(nextExpectedInterest))
+    }, [loan?.id, payments.length])
 
     async function load() {
         const [{ data: l }, { data: p }] = await Promise.all([
@@ -79,7 +84,8 @@ export default function PaymentScreen() {
     const remaining = loan.amount - totalCapitalPaid
     const isVariable = loan.interest_type === 'variable'
 
-    const interest = loan.status === 'agreement'
+    const { carryover, nextExpectedInterest } = calcInterestCarryover(loan, payments)
+    const baseInterest = loan.status === 'agreement'
         ? 0
         : isVariable
             ? calcVariableInterest(loan.amount, totalCapitalPaid, loan.interest_rate, loan.frequency)
@@ -89,6 +95,7 @@ export default function PaymentScreen() {
 
     const nextPayment = calcNextPaymentDate(loan.first_payment_date, loan.frequency, paymentsMade)
     const capitalNum = parseCOP(capital) || 0
+    const interest = parseCOP(interestInput) || 0
     const total = interest + capitalNum
 
     const initials = client.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
@@ -101,6 +108,13 @@ export default function PaymentScreen() {
         if (saving) return
         setSaving(true)
         try {
+            const diff = nextExpectedInterest - interest
+            let autoNote = null
+            if (diff > 0) autoNote = `Faltaron ${formatCOP(diff)} de interés en este pago.`
+            else if (diff < 0) autoNote = `Pagó ${formatCOP(Math.abs(diff))} de interés de más (quedó a favor).`
+
+            const finalNotes = [autoNote, notes || null].filter(Boolean).join(' ')
+
             await supabase.from('payments').insert({
                 loan_id: loan.id,
                 date,
@@ -108,7 +122,7 @@ export default function PaymentScreen() {
                 interest_paid: interest,
                 capital_paid: capitalNum,
                 late: mora.inMora,
-                notes: notes || null,
+                notes: finalNotes || null,
                 payment_method: method,
                 reference: reference || null,
             })
@@ -199,14 +213,39 @@ export default function PaymentScreen() {
                     </div>
                 )}
 
+                {carryover > 0 && (
+                    <div className="border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-900/20 rounded-2xl p-3 flex items-center justify-between">
+                        <p className="text-xs text-amber-700 dark:text-amber-400">
+                            Saldo de interés pendiente de meses anteriores
+                        </p>
+                        <p className="text-sm font-bold text-amber-600 dark:text-amber-400">{formatCOP(carryover)}</p>
+                    </div>
+                )}
+                {carryover < 0 && (
+                    <div className="border border-green-200 dark:border-green-900/50 bg-green-50 dark:bg-green-900/20 rounded-2xl p-3 flex items-center justify-between">
+                        <p className="text-xs text-green-700 dark:text-green-400">
+                            Saldo a favor por interés pagado de más
+                        </p>
+                        <p className="text-sm font-bold text-green-600 dark:text-green-400">{formatCOP(Math.abs(carryover))}</p>
+                    </div>
+                )}
+
                 {/* 1. Monto */}
                 <div className="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm">
                     <p className="text-sm font-bold text-gray-800 dark:text-gray-100 mb-3">1. Monto del pago</p>
 
                     <div className="grid grid-cols-2 gap-3 mb-3">
                         <div className="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-3">
-                            <p className="text-[10px] text-gray-400 mb-1">Interés</p>
-                            <p className="text-sm font-bold text-blue-500">{formatCOP(interest)}</p>
+                            <p className="text-[10px] text-gray-400 mb-1">Interés a pagar</p>
+                            <input
+                                className="w-full bg-transparent text-sm font-bold text-blue-500 focus:outline-none"
+                                inputMode="numeric"
+                                value={interestInput}
+                                onChange={e => {
+                                    const raw = parseCOP(e.target.value)
+                                    setInterestInput(raw ? formatCOP(raw) : '')
+                                }}
+                            />
                         </div>
                         <div className="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-3">
                             <p className="text-[10px] text-gray-400 mb-1">Capital adicional</p>

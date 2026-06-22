@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../db/supabase'
 import { formatCOP } from '../utils/format'
-import { calcVariableInterest, calcTotalLoan, calcNextPaymentDate, classifyLoan, calcMora } from '../utils/loanCalc'
+import { calcVariableInterest, calcTotalLoan, calcNextPaymentDate, classifyLoan, calcMora, calcInterestCarryover } from '../utils/loanCalc'
 import {
     ChevronLeft, DollarSign, Snowflake, CheckCircle, AlertCircle,
     Pencil, X, Handshake, Calendar, Percent, RefreshCw, CreditCard, Ban
@@ -54,6 +54,10 @@ export default function LoanDetail() {
     const mora = (!isInactive)
         ? calcMora(loan, paymentsMade, totalPaid)
         : { inMora: false, diasMora: 0, mesesEnMora: 0, valorInteresesDebe: 0 }
+
+    const { carryover, nextExpectedInterest } = !isInactive
+        ? calcInterestCarryover(loan, payments)
+        : { carryover: 0, nextExpectedInterest: 0 }
 
     const isVariable = loan.interest_type === 'variable'
     const nextInterest = isVariable
@@ -228,6 +232,24 @@ export default function LoanDetail() {
                 </div>
             )}
 
+            {carryover !== 0 && !isInactive && (
+                <div className={`mx-4 rounded-2xl p-4 mb-3 shadow-sm border ${carryover > 0
+                    ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800/40'
+                    : 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800/40'}`}>
+                    <p className={`text-sm font-bold mb-1 ${carryover > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-green-600 dark:text-green-400'}`}>
+                        {carryover > 0 ? 'Saldo de interés pendiente' : 'Saldo de interés a favor'}
+                    </p>
+                    <p className={`text-lg font-bold ${carryover > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-green-600 dark:text-green-400'}`}>
+                        {formatCOP(Math.abs(carryover))}
+                    </p>
+                    <p className="text-xs text-gray-400 mt-1">
+                        {carryover > 0
+                            ? `Se sumará al interés del próximo pago (total esperado: ${formatCOP(nextExpectedInterest)})`
+                            : `Se descontará del interés del próximo pago (total esperado: ${formatCOP(nextExpectedInterest)})`}
+                    </p>
+                </div>
+            )}
+
             {/* Detalles del préstamo */}
             <div className="mx-4 bg-white dark:bg-gray-800 rounded-2xl p-4 mb-3 shadow-sm">
                 <p className="text-sm font-bold text-gray-800 dark:text-gray-100 mb-3">Detalles del préstamo</p>
@@ -309,6 +331,9 @@ export default function LoanDetail() {
                                 <CheckCircle size={14} className="text-green-500" />
                             </div>
                             <div className="flex-1">
+                                {p.notes && (
+                                    <p className="text-xs text-amber-500 dark:text-amber-400 mt-0.5">{p.notes}</p>
+                                )}
                                 <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">{formatCOP(p.total_paid)}</p>
                                 <p className="text-xs text-gray-400">
                                     Capital: {formatCOP(p.capital_paid)} · Interés: {formatCOP(p.interest_paid)}
@@ -378,6 +403,7 @@ export default function LoanDetail() {
                 <SettleModal
                     loan={loan}
                     remaining={remaining}
+                    carryover={carryover}
                     onClose={() => setModal(null)}
                     onDone={() => { setModal(null); load() }}
                 />
@@ -651,11 +677,12 @@ function FreezeModal({ loan, remaining, onClose, onDone }) {
 }
 
 // FIX: valida que remaining > 0 antes de permitir liquidar
-function SettleModal({ loan, remaining, onClose, onDone }) {
+function SettleModal({ loan, remaining, carryover = 0, onClose, onDone }) {
     const [saving, setSaving] = useState(false)
 
-    // FIX: si remaining es 0 o negativo, el préstamo ya está saldado
-    const canSettle = remaining > 0
+    const interestDue = Math.max(0, carryover)
+    const totalToSettle = remaining + interestDue
+    const canSettle = totalToSettle > 0
 
     async function handleSave() {
         if (!canSettle) return
@@ -664,11 +691,13 @@ function SettleModal({ loan, remaining, onClose, onDone }) {
         await supabase.from('payments').insert({
             loan_id: loan.id,
             date: today,
-            total_paid: remaining,
-            interest_paid: 0,
+            total_paid: totalToSettle,
+            interest_paid: interestDue,
             capital_paid: remaining,
             late: false,
-            notes: 'Liquidación del préstamo',
+            notes: interestDue > 0
+                ? `Liquidación del préstamo (incluye ${formatCOP(interestDue)} de interés pendiente).`
+                : 'Liquidación del préstamo',
             payment_method: 'efectivo',
         })
         await supabase.from('loans').update({ status: 'paid' }).eq('id', loan.id)
@@ -679,8 +708,12 @@ function SettleModal({ loan, remaining, onClose, onDone }) {
         <ModalWrapper title="Liquidar préstamo" onClose={onClose}>
             <div className="space-y-3">
                 {canSettle ? (
-                    <div className="bg-green-900/20 border border-green-700/30 rounded-xl p-3 text-xs text-green-300">
-                        Se registrará un pago de <span className="font-bold text-white">{formatCOP(remaining)}</span> (capital pendiente) y el préstamo quedará liquidado.
+                    <div className="bg-green-900/20 border border-green-700/30 rounded-xl p-3 text-xs text-green-300 space-y-1">
+                        <p>Capital pendiente: <span className="font-bold text-white">{formatCOP(remaining)}</span></p>
+                        {interestDue > 0 && (
+                            <p>Interés pendiente acumulado: <span className="font-bold text-white">{formatCOP(interestDue)}</span></p>
+                        )}
+                        <p className="pt-1 border-t border-green-700/30">Total a liquidar: <span className="font-bold text-white">{formatCOP(totalToSettle)}</span></p>
                     </div>
                 ) : (
                     <div className="bg-gray-800 border border-gray-700 rounded-xl p-3 text-xs text-gray-400">
@@ -695,7 +728,7 @@ function SettleModal({ loan, remaining, onClose, onDone }) {
                     disabled={saving || !canSettle}
                     className="w-full bg-green-600 text-white font-semibold py-3 rounded-2xl active:scale-95 transition disabled:opacity-50"
                 >
-                    {saving ? 'Liquidando...' : canSettle ? `Confirmar liquidación · ${formatCOP(remaining)}` : 'Sin saldo pendiente'}
+                    {saving ? 'Liquidando...' : canSettle ? `Confirmar liquidación · ${formatCOP(totalToSettle)}` : 'Sin saldo pendiente'}
                 </button>
             </div>
         </ModalWrapper>

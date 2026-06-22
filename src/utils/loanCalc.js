@@ -157,3 +157,62 @@ export function calcMora(loan, paymentsMade, totalCapitalPaid = 0) {
         valorInteresesDebe,
     }
 }
+
+/**
+ * Calcula el saldo de interés acumulado (carryover) de un préstamo,
+ * recorriendo su historial de pagos en orden cronológico.
+ *
+ * Concepto: cada cuota tiene un interés "esperado" (según tasa fija o
+ * variable sobre saldo). Si el cliente paga menos interés del esperado,
+ * la diferencia queda como deuda (carryover positivo) que se suma al
+ * interés esperado del siguiente pago. Si paga más de lo esperado (ej.
+ * para cubrir un atraso a propósito), el excedente se resta del
+ * carryover — y si no había deuda pendiente, ese excedente queda como
+ * saldo A FAVOR (carryover negativo), reduciendo lo que toca el próximo mes.
+ *
+ * @param {object} loan - El préstamo (amount, interest_rate, interest_amount, interest_type, frequency, status)
+ * @param {object[]} payments - Pagos del préstamo, en CUALQUIER orden (se ordenan internamente por fecha asc)
+ * @returns {{
+ *   carryover: number,           // saldo actual: positivo = debe, negativo = a favor, 0 = al día
+ *   nextExpectedInterest: number // interés base del próximo periodo + carryover (nunca negativo, mínimo 0)
+ * }}
+ */
+export function calcInterestCarryover(loan, payments = []) {
+    if (!loan || loan.status === 'agreement') {
+        return { carryover: 0, nextExpectedInterest: 0 }
+    }
+
+    const isVariable = loan.interest_type === 'variable'
+
+    // Ordenar pagos cronológicamente (el historial puede venir en cualquier orden,
+    // p.ej. LoanDetail los carga descendente para mostrarlos en UI)
+    const sorted = [...payments].sort((a, b) => new Date(a.date) - new Date(b.date))
+
+    let capitalPaidSoFar = 0
+    let carryover = 0
+
+    for (const p of sorted) {
+        // Interés que correspondía ANTES de aplicar este pago
+        const baseInterest = isVariable
+            ? calcInterest(loan.amount - capitalPaidSoFar, loan.interest_rate, loan.frequency)
+            : (loan.interest_amount || 0)
+
+        const expected = baseInterest + carryover
+        const actuallyPaid = p.interest_paid || 0
+
+        // Diferencia: positiva si pagó menos de lo esperado (queda debiendo),
+        // negativa si pagó más (abona al arrastre o genera saldo a favor)
+        carryover = expected - actuallyPaid
+
+        capitalPaidSoFar += (p.capital_paid || 0)
+    }
+
+    // Interés esperado para el PRÓXIMO pago = base del periodo actual + lo que arrastra
+    const nextBaseInterest = isVariable
+        ? calcInterest(loan.amount - capitalPaidSoFar, loan.interest_rate, loan.frequency)
+        : (loan.interest_amount || 0)
+
+    const nextExpectedInterest = Math.max(0, nextBaseInterest + carryover)
+
+    return { carryover, nextExpectedInterest }
+}
