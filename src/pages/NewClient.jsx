@@ -84,7 +84,7 @@ export default function NewClient() {
     <div className="p-4 pb-24 bg-gray-50 dark:bg-gray-900 min-h-screen">
       {/* Header */}
       <div className="flex items-center gap-3 mb-1">
-        <button onClick={() => navigate(-1)} className="text-blue-500 dark:text-blue-400">
+        <button onClick={() => { if (!isEditing) clearPersisted(); navigate(-1) }} className="text-blue-500 dark:text-blue-400">
           <ChevronLeft size={26} />
         </button>
         <div>

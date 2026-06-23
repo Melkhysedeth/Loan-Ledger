@@ -109,7 +109,7 @@ export default function Clients() {
   }
 
   function handleEditClient(client) {
-    navigate('/clients/new', { state: { editClient: client } })
+    navigate(`/clients/${client.id}`)
   }
 
   async function handleDeleteClient(clientId) {
