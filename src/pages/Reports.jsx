@@ -22,7 +22,9 @@ export default function Reports() {
         const overdueLoans = (loans || []).filter(l => l.status === 'overdue')
         const allPayments = payments || []
 
-        const capitalActivo = activeLoans.reduce((s, l) => s + (l.amount || 0), 0)
+        // FIX: el capital en mora sigue siendo capital activo (es deuda viva que debe recuperarse),
+        // así que se suma al capital activo en vez de mostrarse como una categoría aparte y excluida.
+        const capitalActivo = [...activeLoans, ...overdueLoans].reduce((s, l) => s + (l.amount || 0), 0)
         const capitalEnMora = overdueLoans.reduce((s, l) => s + (l.amount || 0), 0)
         const gananciaTotal = allPayments.reduce((s, p) => s + (p.interest_paid || 0), 0)
 
@@ -54,7 +56,7 @@ export default function Reports() {
             .sort((a, b) => a.rate - b.rate)
 
         const proyeccion = rateGroups.reduce((s, g) => s + g.monthlyIncome, 0)
-        const totalCapital = capitalActivo + capitalEnMora
+        const totalCapital = capitalActivo // ya incluye capitalEnMora, no se debe sumar de nuevo
         const margen = totalCapital > 0 ? ((pagosEsteMes / totalCapital) * 100) : 0
 
         setStats({

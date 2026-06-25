@@ -33,10 +33,30 @@ export default function LoanDetail() {
   const [client, setClient] = useState(null);
   const [payments, setPayments] = useState([]);
   const [modal, setModal] = useState(null);
+  const [voidTarget, setVoidTarget] = useState(null)
 
   useEffect(() => {
     load();
   }, [id]);
+
+  async function handleVoidPayment(paymentId, reason) {
+    await supabase.from('payments').update({
+      voided: true,
+      void_reason: reason,
+    }).eq('id', paymentId)
+
+    // Recalcular si el préstamo debe volver a estar activo
+    const { data: freshPayments } = await supabase.from('payments').select('*').eq('loan_id', id)
+    const stillActivePayments = (freshPayments || []).filter(p => !p.voided)
+    const newCapitalPaid = stillActivePayments.reduce((s, p) => s + (p.capital_paid || 0), 0)
+    const newRemaining = loan.amount - newCapitalPaid
+
+    if (loan.status === 'paid' && newRemaining > 0) {
+      await supabase.from('loans').update({ status: 'active' }).eq('id', loan.id)
+    }
+
+    load()
+  }
 
   async function load() {
     const [{ data: l }, { data: p }] = await Promise.all([
@@ -63,13 +83,14 @@ export default function LoanDetail() {
       <div className="p-6 text-center text-gray-400 mt-20">Cargando...</div>
     );
 
-  const totalPaid = payments.reduce((s, p) => s + (p.capital_paid || 0), 0);
-  const totalInterestPaid = payments.reduce(
-    (s, p) => s + (p.interest_paid || 0),
-    0,
-  );
-  const remaining = loan.amount - totalPaid;
-  const paymentsMade = payments.length;
+  // Pagos anulados no cuentan para ningún cálculo, pero siguen en `payments`
+  // para mostrarse en el historial con su motivo.
+  const activePayments = payments.filter(p => !p.voided)
+
+  const totalPaid = activePayments.reduce((s, p) => s + (p.capital_paid || 0), 0)
+  const totalInterestPaid = activePayments.reduce((s, p) => s + (p.interest_paid || 0), 0)
+  const remaining = loan.amount - totalPaid
+  const paymentsMade = activePayments.length
 
   const isFrozen = loan.status === "frozen";
   const isPaid = loan.status === "paid";
@@ -86,22 +107,22 @@ export default function LoanDetail() {
   const isOverdue =
     !isInactive && (classification === "overdue" || loan.status === "overdue");
 
-  const mora = !isInactive
+  const mora = (!isInactive)
     ? calcMora(loan, paymentsMade, totalPaid)
-    : { inMora: false, diasMora: 0, mesesEnMora: 0, valorInteresesDebe: 0 };
+    : { inMora: false, diasMora: 0, mesesEnMora: 0, valorInteresesDebe: 0 }
 
   const { carryover, nextExpectedInterest } = !isInactive
-    ? calcInterestCarryover(loan, payments)
-    : { carryover: 0, nextExpectedInterest: 0 };
+    ? calcInterestCarryover(loan, activePayments)
+    : { carryover: 0, nextExpectedInterest: 0 }
 
   const isVariable = loan.interest_type === "variable";
   const nextInterest = isVariable
     ? calcVariableInterest(
-        loan.amount,
-        totalPaid,
-        loan.interest_rate,
-        loan.frequency,
-      )
+      loan.amount,
+      totalPaid,
+      loan.interest_rate,
+      loan.frequency,
+    )
     : loan.interest_amount || 0;
   const preview =
     !isVariable && loan.num_payments
@@ -179,9 +200,9 @@ export default function LoanDetail() {
             Otorgado el{" "}
             {loan.start_date
               ? new Date(loan.start_date + "T12:00:00").toLocaleDateString(
-                  "es-CO",
-                  { day: "numeric", month: "short", year: "numeric" },
-                )
+                "es-CO",
+                { day: "numeric", month: "short", year: "numeric" },
+              )
               : "—"}
           </p>
         </div>
@@ -366,11 +387,10 @@ export default function LoanDetail() {
 
       {carryover !== 0 && !isInactive && (
         <div
-          className={`mx-4 rounded-2xl p-4 mb-3 shadow-sm border ${
-            carryover > 0
-              ? "bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800/40"
-              : "bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800/40"
-          }`}
+          className={`mx-4 rounded-2xl p-4 mb-3 shadow-sm border ${carryover > 0
+            ? "bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800/40"
+            : "bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800/40"
+            }`}
         >
           <p
             className={`text-sm font-bold mb-1 ${carryover > 0 ? "text-amber-600 dark:text-amber-400" : "text-green-600 dark:text-green-400"}`}
@@ -409,9 +429,9 @@ export default function LoanDetail() {
             value={
               loan.start_date
                 ? new Date(loan.start_date + "T12:00:00").toLocaleDateString(
-                    "es-CO",
-                    { day: "numeric", month: "short", year: "numeric" },
-                  )
+                  "es-CO",
+                  { day: "numeric", month: "short", year: "numeric" },
+                )
                 : "—"
             }
           />
@@ -433,10 +453,10 @@ export default function LoanDetail() {
                   : nextPayment;
               return fecha
                 ? fecha.toLocaleDateString("es-CO", {
-                    day: "numeric",
-                    month: "short",
-                    year: "numeric",
-                  })
+                  day: "numeric",
+                  month: "short",
+                  year: "numeric",
+                })
                 : "—";
             })()}
             valueColor={
@@ -471,11 +491,10 @@ export default function LoanDetail() {
             Resumen de pagos
           </p>
           <div
-            className={`rounded-xl p-3 mb-3 flex items-center gap-2 ${
-              isVariable
-                ? "bg-purple-50 dark:bg-purple-900/20 border border-purple-100 dark:border-purple-800/40"
-                : "bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800/40"
-            }`}
+            className={`rounded-xl p-3 mb-3 flex items-center gap-2 ${isVariable
+              ? "bg-purple-50 dark:bg-purple-900/20 border border-purple-100 dark:border-purple-800/40"
+              : "bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800/40"
+              }`}
           >
             <Percent
               size={14}
@@ -495,49 +514,10 @@ export default function LoanDetail() {
             </div>
           </div>
           <div className="grid grid-cols-2 gap-2">
-            <SummaryBox
-              label="Capital pagado"
-              value={formatCOP(totalPaid)}
-              sub={`${paymentsMade} cuotas`}
-              color="text-green-500"
-              bg="bg-green-50 dark:bg-green-900/20"
-            />
-            <SummaryBox
-              label="Capital pendiente"
-              value={formatCOP(remaining)}
-              sub={
-                loan.num_payments && !isVariable
-                  ? `${loan.num_payments - paymentsMade} cuotas`
-                  : "—"
-              }
-              color="text-amber-500"
-              bg="bg-amber-50 dark:bg-amber-900/20"
-            />
-            <SummaryBox
-              label="Próximo interés"
-              value={!isPaid && nextPayment ? formatCOP(nextInterest) : "—"}
-              sub={
-                nextPayment && !isPaid
-                  ? nextPayment.toLocaleDateString("es-CO", {
-                      day: "numeric",
-                      month: "short",
-                    })
-                  : "—"
-              }
-              color={isVariable ? "text-purple-500" : "text-blue-500"}
-              bg={
-                isVariable
-                  ? "bg-purple-50 dark:bg-purple-900/20"
-                  : "bg-blue-50 dark:bg-blue-900/20"
-              }
-            />
-            <SummaryBox
-              label="Intereses cobrados"
-              value={formatCOP(totalInterestPaid)}
-              sub="total histórico"
-              color="text-green-500"
-              bg="bg-green-50 dark:bg-green-900/20"
-            />
+            <SummaryBox label="Capital pagado" value={formatCOP(totalPaid)} sub={`${paymentsMade} cuotas`} color="text-green-500" bg="bg-green-50 dark:bg-green-900/20" />
+            <SummaryBox label="Capital pendiente" value={formatCOP(remaining)} sub={loan.num_payments && !isVariable ? `${loan.num_payments - paymentsMade} cuotas` : "—"} color="text-amber-500" bg="bg-amber-50 dark:bg-amber-900/20" />
+            <SummaryBox label="Próximo interés" value={!isPaid && nextPayment ? formatCOP(nextInterest) : "—"} sub={nextPayment && !isPaid ? nextPayment.toLocaleDateString("es-CO", { day: "numeric", month: "short", }) : "—"} color={isVariable ? "text-purple-500" : "text-blue-500"} bg={isVariable ? "bg-purple-50 dark:bg-purple-900/20" : "bg-blue-50 dark:bg-blue-900/20"} />
+            <SummaryBox label="Intereses cobrados" value={formatCOP(totalInterestPaid)} sub="total histórico" color="text-green-500" bg="bg-green-50 dark:bg-green-900/20" />
           </div>
         </div>
       )}
@@ -553,44 +533,46 @@ export default function LoanDetail() {
           </p>
         ) : (
           payments.map((p, i) => (
-            <div
-              key={p.id}
-              className={`flex items-center gap-3 px-4 py-3 ${i < payments.length - 1 ? "border-b border-gray-100 dark:border-gray-700" : ""}`}
-            >
-              <div className="w-8 h-8 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center shrink-0">
-                <CheckCircle size={14} className="text-green-500" />
+            <div key={p.id} className={`flex items-center gap-3 px-4 py-3 ${i < payments.length - 1 ? 'border-b border-gray-100 dark:border-gray-700' : ''} ${p.voided ? 'opacity-50' : ''}`}>
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${p.voided ? 'bg-gray-200 dark:bg-gray-700' : 'bg-green-100 dark:bg-green-900/30'}`}>
+                {p.voided ? <Ban size={14} className="text-gray-400" /> : <CheckCircle size={14} className="text-green-500" />}
               </div>
               <div className="flex-1">
                 {p.notes && (
-                  <p className="text-xs text-amber-500 dark:text-amber-400 mt-0.5">
-                    {p.notes}
-                  </p>
+                  <p className={`text-xs mt-0.5 ${p.voided ? 'text-gray-400' : 'text-amber-500 dark:text-amber-400'}`}>{p.notes}</p>
                 )}
-                <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">
+                <p className={`text-sm font-semibold ${p.voided ? 'text-gray-400 line-through' : 'text-gray-800 dark:text-gray-200'}`}>
                   {formatCOP(p.total_paid)}
                 </p>
-                <p className="text-xs text-gray-400">
-                  Capital: {formatCOP(p.capital_paid)} · Interés:{" "}
-                  {formatCOP(p.interest_paid)}
+                <p className={`text-xs ${p.voided ? 'text-gray-400' : 'text-gray-400'}`}>
+                  Capital: {formatCOP(p.capital_paid)} · Interés: {formatCOP(p.interest_paid)}
                 </p>
-                {p.payment_method && (
+                {p.payment_method && !p.voided && (
                   <p className="text-xs text-gray-400 mt-0.5 capitalize">
-                    {p.payment_method === "breb" ? "Bre-B" : p.payment_method}
-                    {p.reference ? ` · Ref: ${p.reference}` : ""}
+                    {p.payment_method === 'breb' ? 'Bre-B' : p.payment_method}
+                    {p.reference ? ` · Ref: ${p.reference}` : ''}
                   </p>
+                )}
+                {p.voided && p.void_reason && (
+                  <p className="text-xs text-red-400 mt-0.5">Anulado: {p.void_reason}</p>
                 )}
               </div>
               <div className="text-right">
-                <p className="text-xs text-gray-400">
-                  {new Date(p.date + "T12:00:00").toLocaleDateString("es-CO")}
-                </p>
-                {p.late && (
-                  <span className="text-[10px] text-red-400">Tardío</span>
-                )}
+                <p className="text-xs text-gray-400">{new Date(p.date + 'T12:00:00').toLocaleDateString('es-CO')}</p>
+                {p.late && !p.voided && <span className="text-[10px] text-red-400">Tardío</span>}
               </div>
-              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400">
-                Pagado
-              </span>
+              {p.voided ? (
+                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400">
+                  Anulado
+                </span>
+              ) : (
+                <button
+                  onClick={() => setVoidTarget(p)}
+                  className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-red-50 dark:bg-red-900/20 text-red-500 dark:text-red-400 active:scale-95 transition"
+                >
+                  Anular
+                </button>
+              )}
             </div>
           ))
         )}
@@ -700,6 +682,17 @@ export default function LoanDetail() {
           onDone={() => {
             setModal(null);
             load();
+          }}
+        />
+      )}
+
+      {voidTarget && (
+        <VoidPaymentModal
+          payment={voidTarget}
+          onClose={() => setVoidTarget(null)}
+          onConfirm={async (reason) => {
+            await handleVoidPayment(voidTarget.id, reason)
+            setVoidTarget(null)
           }}
         />
       )}
@@ -925,11 +918,10 @@ function FreezeModal({ loan, remaining, onClose, onDone }) {
             <div className="grid grid-cols-2 gap-2">
               <button
                 onClick={() => setInterestType("fixed")}
-                className={`py-2 px-3 rounded-xl text-xs font-semibold border transition ${
-                  interestType === "fixed"
-                    ? "bg-blue-600 border-blue-500 text-white"
-                    : "bg-gray-800 border-gray-700 text-gray-400"
-                }`}
+                className={`py-2 px-3 rounded-xl text-xs font-semibold border transition ${interestType === "fixed"
+                  ? "bg-blue-600 border-blue-500 text-white"
+                  : "bg-gray-800 border-gray-700 text-gray-400"
+                  }`}
               >
                 Fijo
                 <span className="block text-[10px] font-normal opacity-70 mt-0.5">
@@ -938,11 +930,10 @@ function FreezeModal({ loan, remaining, onClose, onDone }) {
               </button>
               <button
                 onClick={() => setInterestType("variable")}
-                className={`py-2 px-3 rounded-xl text-xs font-semibold border transition ${
-                  interestType === "variable"
-                    ? "bg-purple-600 border-purple-500 text-white"
-                    : "bg-gray-800 border-gray-700 text-gray-400"
-                }`}
+                className={`py-2 px-3 rounded-xl text-xs font-semibold border transition ${interestType === "variable"
+                  ? "bg-purple-600 border-purple-500 text-white"
+                  : "bg-gray-800 border-gray-700 text-gray-400"
+                  }`}
               >
                 Variable
                 <span className="block text-[10px] font-normal opacity-70 mt-0.5">
@@ -1257,4 +1248,46 @@ function CancelModal({ loan, remaining, onClose, onDone }) {
       </div>
     </ModalWrapper>
   );
+}
+
+function VoidPaymentModal({ payment, onClose, onConfirm }) {
+  const [reason, setReason] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  async function handleSave() {
+    if (!reason.trim()) return
+    setSaving(true)
+    await onConfirm(reason.trim())
+    setSaving(false)
+  }
+
+  return (
+    <ModalWrapper title="Anular pago" onClose={onClose}>
+      <div className="space-y-3">
+        <div className="bg-red-900/20 border border-red-700/30 rounded-xl p-3 text-xs text-red-300">
+          Este pago de <span className="font-bold text-white">{formatCOP(payment.total_paid)}</span> del{' '}
+          {new Date(payment.date + 'T12:00:00').toLocaleDateString('es-CO')} quedará marcado como anulado.
+          El capital vuelve al saldo pendiente y el interés deja de contar como ganancia.
+        </div>
+        <div>
+          <label className="text-sm text-gray-400 mb-1 block">Motivo de anulación *</label>
+          <textarea
+            rows={3}
+            value={reason}
+            onChange={e => setReason(e.target.value)}
+            placeholder="Ej: Valor errado, abonado a crédito incorrecto, pago doble..."
+            className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-red-500 text-sm resize-none"
+          />
+          {!reason.trim() && <p className="text-xs text-red-400 mt-1">El motivo es obligatorio</p>}
+        </div>
+        <button
+          onClick={handleSave}
+          disabled={saving || !reason.trim()}
+          className="w-full bg-red-600 text-white font-semibold py-3 rounded-2xl active:scale-95 transition disabled:opacity-50"
+        >
+          {saving ? 'Anulando...' : 'Confirmar anulación'}
+        </button>
+      </div>
+    </ModalWrapper>
+  )
 }

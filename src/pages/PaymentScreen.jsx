@@ -80,6 +80,7 @@ export default function PaymentScreen() {
   const [method, setMethod] = useState("efectivo");
   const [reference, setReference] = useState("");
   const [notes, setNotes] = useState("");
+  const [periodsToSettle, setPeriodsToSettle] = useState(1)
 
   useEffect(() => {
     load();
@@ -127,17 +128,14 @@ export default function PaymentScreen() {
     loan,
     payments,
   );
-  const baseInterest =
-    loan.status === "agreement"
-      ? 0
-      : isVariable
-        ? calcVariableInterest(
-            loan.amount,
-            totalCapitalPaid,
-            loan.interest_rate,
-            loan.frequency,
-          )
-        : loan.interest_amount || 0;
+
+  const interestForPeriods = (n) => Math.max(0, baseInterest * n + carryover)
+
+  const baseInterest = loan.status === 'agreement'
+    ? 0
+    : isVariable
+      ? calcVariableInterest(loan.amount, totalCapitalPaid, loan.interest_rate, loan.frequency)
+      : (loan.interest_amount || 0)
 
   const mora = calcMora(loan, paymentsMade, totalCapitalPaid);
 
@@ -162,42 +160,60 @@ export default function PaymentScreen() {
     : `Cuota ${paymentsMade + 1}`;
 
   async function handleSave() {
-    if (saving) return;
-    setSaving(true);
+    if (saving) return
+    setSaving(true)
     try {
-      const diff = nextExpectedInterest - interest;
-      let autoNote = null;
-      if (diff > 0)
-        autoNote = `Faltaron ${formatCOP(diff)} de interés en este pago.`;
-      else if (diff < 0)
-        autoNote = `Pagó ${formatCOP(Math.abs(diff))} de interés de más (quedó a favor).`;
+      // Si se están liquidando varios períodos de mora a la vez, se genera
+      // una fila de pago por cada período (mismo día), cada una con su interés
+      // correspondiente. El capital abonado va completo en la última fila.
+      const rows = []
+      if (periodsToSettle > 1) {
+        const interestPerPeriod = Math.round(interest / periodsToSettle)
+        for (let i = 0; i < periodsToSettle; i++) {
+          const isLast = i === periodsToSettle - 1
+          rows.push({
+            loan_id: loan.id,
+            date,
+            total_paid: isLast ? interestPerPeriod + capitalNum : interestPerPeriod,
+            interest_paid: interestPerPeriod,
+            capital_paid: isLast ? capitalNum : 0,
+            late: mora.inMora,
+            notes: isLast
+              ? [`Liquidación de ${periodsToSettle} períodos de interés en mora.`, notes || null].filter(Boolean).join(' ')
+              : 'Período de interés en mora (liquidado junto con otros).',
+            payment_method: method,
+            reference: reference || null,
+          })
+        }
+      } else {
+        const diff = nextExpectedInterest - interest
+        let autoNote = null
+        if (diff > 0) autoNote = `Faltaron ${formatCOP(diff)} de interés en este pago.`
+        else if (diff < 0) autoNote = `Pagó ${formatCOP(Math.abs(diff))} de interés de más (quedó a favor).`
 
-      const finalNotes = [autoNote, notes || null].filter(Boolean).join(" ");
-
-      await supabase.from("payments").insert({
-        loan_id: loan.id,
-        date,
-        total_paid: total,
-        interest_paid: interest,
-        capital_paid: capitalNum,
-        late: mora.inMora,
-        notes: finalNotes || null,
-        payment_method: method,
-        reference: reference || null,
-      });
-
-      // FIX: si el capital pagado deja el préstamo en 0 (o menos), se marca como liquidado.
-      const newRemaining = remaining - capitalNum;
-      if (newRemaining <= 0) {
-        await supabase
-          .from("loans")
-          .update({ status: "paid" })
-          .eq("id", loan.id);
+        rows.push({
+          loan_id: loan.id,
+          date,
+          total_paid: total,
+          interest_paid: interest,
+          capital_paid: capitalNum,
+          late: mora.inMora,
+          notes: [autoNote, notes || null].filter(Boolean).join(' ') || null,
+          payment_method: method,
+          reference: reference || null,
+        })
       }
 
-      navigate(`/loans/${id}`);
+      await supabase.from('payments').insert(rows)
+
+      const newRemaining = remaining - capitalNum
+      if (newRemaining <= 0) {
+        await supabase.from('loans').update({ status: 'paid' }).eq('id', loan.id)
+      }
+
+      navigate(`/loans/${id}`)
     } finally {
-      setSaving(false);
+      setSaving(false)
     }
   }
 
@@ -254,10 +270,10 @@ export default function PaymentScreen() {
             <p className="text-xs font-semibold text-blue-700 dark:text-blue-300">
               {nextPayment
                 ? nextPayment.toLocaleDateString("es-CO", {
-                    day: "numeric",
-                    month: "short",
-                    year: "numeric",
-                  })
+                  day: "numeric",
+                  month: "short",
+                  year: "numeric",
+                })
                 : "—"}
             </p>
           </div>
@@ -305,6 +321,57 @@ export default function PaymentScreen() {
                 </p>
               </div>
             </div>
+          </div>
+        )}
+
+        {mora.inMora && mora.periodosEnMora > 0 && (
+          <div className="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm">
+            <p className="text-sm font-bold text-gray-800 dark:text-gray-100 mb-2">
+              ¿Cuántos períodos de interés está liquidando?
+            </p>
+            <p className="text-xs text-gray-400 mb-3">
+              Tiene {mora.periodosEnMora} período(s) en mora · {formatCOP(baseInterest)} por período
+            </p>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => {
+                  const n = Math.max(1, periodsToSettle - 1)
+                  setPeriodsToSettle(n)
+                  setInterestInput(formatCOP(interestForPeriods(n)))
+                }}
+                className="w-10 h-10 rounded-xl bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 font-bold text-lg active:scale-95 transition"
+              >
+                −
+              </button>
+
+              <input
+                type="number"
+                min={1}
+                max={mora.periodosEnMora + 1}
+                value={periodsToSettle}
+                onChange={e => {
+                  const n = Math.min(mora.periodosEnMora + 1, Math.max(1, parseInt(e.target.value) || 1))
+                  setPeriodsToSettle(n)
+                  setInterestInput(formatCOP(interestForPeriods(n)))
+                }}
+                className="flex-1 text-center bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl py-2 text-gray-800 dark:text-white font-bold focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+
+              <button
+                onClick={() => {
+                  const n = Math.min(mora.periodosEnMora + 1, periodsToSettle + 1)
+                  setPeriodsToSettle(n)
+                  setInterestInput(formatCOP(interestForPeriods(n)))
+                }}
+                className="w-10 h-10 rounded-xl bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 font-bold text-lg active:scale-95 transition"
+              >
+                +
+              </button>
+            </div>
+
+            <p className="text-xs text-gray-400 mt-2 text-center">
+              Máximo {mora.periodosEnMora + 1} período(s) disponibles
+            </p>
           </div>
         )}
 
@@ -406,11 +473,10 @@ export default function PaymentScreen() {
               <button
                 key={m.id}
                 onClick={() => setMethod(m.id)}
-                className={`flex flex-col items-center gap-1.5 py-3 px-2 rounded-xl border transition active:scale-95 ${
-                  method === m.id
-                    ? "border-blue-500 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400"
-                    : "border-gray-200 dark:border-gray-700 text-gray-400 dark:text-gray-500"
-                }`}
+                className={`flex flex-col items-center gap-1.5 py-3 px-2 rounded-xl border transition active:scale-95 ${method === m.id
+                  ? "border-blue-500 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400"
+                  : "border-gray-200 dark:border-gray-700 text-gray-400 dark:text-gray-500"
+                  }`}
               >
                 {m.icon}
                 <span className="text-xs font-medium">{m.label}</span>
