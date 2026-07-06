@@ -2,29 +2,36 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../db/supabase'
 import { formatCOP } from '../utils/format'
-import { ChevronLeft, TrendingUp, AlertCircle, Percent, BarChart2 } from 'lucide-react'
+import { ChevronLeft, TrendingUp, AlertCircle, Percent, BarChart2, Banknote, ChevronRight, X } from 'lucide-react'
 
 export default function Reports() {
     const navigate = useNavigate()
     const [loading, setLoading] = useState(true)
     const [stats, setStats] = useState(null)
+    const [showWithdrawHistory, setShowWithdrawHistory] = useState(false)
 
     useEffect(() => { load() }, [])
 
     async function load() {
-        const [{ data: loans }, { data: payments }, { data: clients }] = await Promise.all([
+        const [{ data: loans }, { data: payments }, { data: clients }, { data: withdrawals }] = await Promise.all([
             supabase.from('loans').select('id, amount, interest_rate, status, created_at'),
             supabase.from('payments').select('total_paid, interest_paid, created_at'),
             supabase.from('clients').select('id'),
+            supabase.from('capital_withdrawals').select('amount, date, notes').order('date', { ascending: false }),
         ])
 
         const activeLoans = (loans || []).filter(l => ['active', 'frozen', 'agreement'].includes(l.status))
         const overdueLoans = (loans || []).filter(l => l.status === 'overdue')
         const allPayments = payments || []
+        const allWithdrawals = withdrawals || []
+
+        const capitalRetirado = allWithdrawals.reduce((s, w) => s + (w.amount || 0), 0)
+        const retirosCount = allWithdrawals.length
+        const lastWithdrawal = allWithdrawals[0] || null
 
         // FIX: el capital en mora sigue siendo capital activo (es deuda viva que debe recuperarse),
         // así que se suma al capital activo en vez de mostrarse como una categoría aparte y excluida.
-        const capitalActivo = [...activeLoans, ...overdueLoans].reduce((s, l) => s + (l.amount || 0), 0)
+        const capitalActivo = [...activeLoans, ...overdueLoans].reduce((s, l) => s + (l.amount || 0), 0) - capitalRetirado
         const capitalEnMora = overdueLoans.reduce((s, l) => s + (l.amount || 0), 0)
         const gananciaTotal = allPayments.reduce((s, p) => s + (p.interest_paid || 0), 0)
 
@@ -61,6 +68,7 @@ export default function Reports() {
 
         setStats({
             gananciaTotal, pagosEsteMes, capitalActivo, capitalEnMora,
+            capitalRetirado, retirosCount, lastWithdrawal, withdrawals: allWithdrawals,
             activeCount: activeLoans.length,
             overdueCount: overdueLoans.length,
             clientCount: (clients || []).length,
@@ -131,6 +139,37 @@ export default function Reports() {
                 <MetricRow label="Proyección próximo mes" value={formatCOP(stats.proyeccion)} valueClass="text-green-600 dark:text-green-400" last />
             </div>
 
+            {/* Capital retirado del negocio */}
+            {stats.retirosCount > 0 && (
+                <div className="mx-4 mb-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl overflow-hidden">
+                    <button
+                        onClick={() => setShowWithdrawHistory(true)}
+                        className="w-full p-4 flex items-center gap-3 text-left active:bg-gray-50 dark:active:bg-gray-700/40 transition"
+                    >
+                        <div className="w-10 h-10 rounded-full bg-red-50 dark:bg-red-900/30 flex items-center justify-center shrink-0">
+                            <Banknote size={18} className="text-red-500" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                            <p className="text-sm text-gray-400">Capital retirado del negocio</p>
+                            <p className="text-lg font-bold text-red-500">{formatCOP(stats.capitalRetirado)}</p>
+                            <p className="text-[11px] text-gray-400">
+                                Último retiro: {formatCOP(stats.lastWithdrawal?.amount)}
+                                {stats.lastWithdrawal?.date ? ` · ${new Date(stats.lastWithdrawal.date + 'T12:00:00').toLocaleDateString('es-CO', { day: 'numeric', month: 'short' })}` : ''}
+                            </p>
+                        </div>
+                        <ChevronRight size={16} className="text-gray-300 shrink-0" />
+                    </button>
+                </div>
+            )}
+
+            {showWithdrawHistory && (
+                <WithdrawHistoryModal
+                    withdrawals={stats.withdrawals}
+                    total={stats.capitalRetirado}
+                    onClose={() => setShowWithdrawHistory(false)}
+                />
+            )}
+
             {/* Rendimiento por tasa */}
             {stats.rateGroups.length > 0 && (
                 <div className="mx-4">
@@ -179,6 +218,44 @@ function MetricRow({ label, value, valueClass, Icon, last }) {
             <div className="flex items-center gap-1.5">
                 {Icon && <Icon size={13} className={valueClass} />}
                 <p className={`text-sm font-semibold ${valueClass}`}>{value}</p>
+            </div>
+        </div>
+    )
+}
+
+function WithdrawHistoryModal({ withdrawals, total, onClose }) {
+    return (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60">
+            <div className="w-full max-w-md bg-white dark:bg-gray-900 rounded-t-3xl pt-6 pb-10 max-h-[80vh] flex flex-col">
+                <div className="flex justify-between items-center mb-1 px-6">
+                    <div>
+                        <h2 className="font-bold text-gray-900 dark:text-white text-lg">Historial de retiros</h2>
+                        <p className="text-xs text-gray-400">Total retirado: <span className="font-semibold text-red-500">{formatCOP(total)}</span></p>
+                    </div>
+                    <button onClick={onClose}>
+                        <X size={20} className="text-gray-400" />
+                    </button>
+                </div>
+                <div className="overflow-y-auto mt-3">
+                    {withdrawals.length === 0 ? (
+                        <p className="text-sm text-gray-400 text-center py-8">Sin retiros registrados</p>
+                    ) : (
+                        withdrawals.map((w, i) => (
+                            <div key={i} className={`flex items-center gap-3 px-6 py-3 ${i < withdrawals.length - 1 ? 'border-b border-gray-100 dark:border-gray-700' : ''}`}>
+                                <div className="w-9 h-9 rounded-full bg-red-50 dark:bg-red-900/30 flex items-center justify-center shrink-0">
+                                    <Banknote size={15} className="text-red-500" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-sm font-semibold text-gray-800 dark:text-gray-100">{formatCOP(w.amount)}</p>
+                                    {w.notes && <p className="text-xs text-gray-400 truncate">{w.notes}</p>}
+                                </div>
+                                <p className="text-xs text-gray-400 shrink-0">
+                                    {w.date ? new Date(w.date + 'T12:00:00').toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
+                                </p>
+                            </div>
+                        ))
+                    )}
+                </div>
             </div>
         </div>
     )

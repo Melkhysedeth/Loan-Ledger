@@ -60,6 +60,7 @@ export default function Loans() {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("active");
   const [loading, setLoading] = useState(true);
+  const [totalWithdrawn, setTotalWithdrawn] = useState(0);
 
   useEffect(() => {
     loadLoans();
@@ -67,7 +68,7 @@ export default function Loans() {
 
   async function loadLoans() {
     setLoading(true);
-    const [{ data: allLoans }, { data: allClients }, { data: allPayments }] =
+    const [{ data: allLoans }, { data: allClients }, { data: allPayments }, { data: withdrawals }] =
       await Promise.all([
         supabase
           .from("loans")
@@ -75,7 +76,10 @@ export default function Loans() {
           .order("created_at", { ascending: false }),
         supabase.from("clients").select("*"),
         supabase.from("payments").select("*"),
+        supabase.from("capital_withdrawals").select("amount"),
       ]);
+
+    setTotalWithdrawn((withdrawals || []).reduce((s, w) => s + (w.amount || 0), 0));
 
     const loansList = allLoans || [];
     const paymentsList = allPayments || [];
@@ -181,7 +185,7 @@ export default function Loans() {
   const activeLoans = loans.filter((l) =>
     ["active", "overdue", "frozen", "agreement"].includes(l.status),
   );
-  const totalLent = activeLoans.reduce((s, l) => s + (l.amount || 0), 0);
+  const totalLent = activeLoans.reduce((s, l) => s + (l.amount || 0), 0) - totalWithdrawn;
   const totalPending = activeLoans.reduce((s, l) => {
     const paid = payments
       .filter((p) => p.loan_id === l.id)

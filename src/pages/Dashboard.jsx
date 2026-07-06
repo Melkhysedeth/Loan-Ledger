@@ -7,7 +7,7 @@ import { calcNextPaymentDate, classifyLoan } from '../utils/loanCalc'
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 import {
     Bell, DollarSign, LayoutList, AlertTriangle, Smile, Calendar,
-    Wallet, Users, CalendarPlus, HandCoins, UserPlus, FileBarChart, ChevronRight
+    Wallet, Users, CalendarPlus, Banknote, UserPlus, FileBarChart, ChevronRight, X
 } from 'lucide-react'
 import Carousel from '../components/Carousel'
 
@@ -50,25 +50,27 @@ export default function Dashboard() {
 
     const { user } = useAuth()
     const userName = user?.user_metadata?.full_name?.split(' ')[0] || 'usuario'
+    const [showWithdraw, setShowWithdraw] = useState(false)
 
-    useEffect(() => {
-        async function load() {
+    async function load() {
             const now = new Date()
             const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
 
-            const [{ data: clients }, { data: loans }, { data: payments }] = await Promise.all([
+            const [{ data: clients }, { data: loans }, { data: payments }, { data: withdrawals }] = await Promise.all([
                 supabase.from('clients').select('*'),
                 supabase.from('loans').select('*'),
                 supabase.from('payments').select('*').order('date', { ascending: false }),
+                supabase.from('capital_withdrawals').select('amount'),
             ])
 
             const allLoans = loans || []
             const allClients = clients || []
             const allPayments = payments || []
+            const totalWithdrawn = (withdrawals || []).reduce((s, w) => s + (w.amount || 0), 0)
 
             const activeLoans = allLoans.filter(l => ['active', 'overdue', 'frozen', 'agreement'].includes(l.status))
             const onTimeLoans = allLoans.filter(l => ['active', 'frozen', 'agreement'].includes(l.status))
-            const totalLent = activeLoans.reduce((s, l) => s + (l.amount || 0), 0)
+            const totalLent = activeLoans.reduce((s, l) => s + (l.amount || 0), 0) - totalWithdrawn
 
             const collectedThisMonth = allPayments
                 .filter(p => p.date >= startOfMonth.split('T')[0])
@@ -153,9 +155,9 @@ export default function Dashboard() {
                 attention, statusDistribution, recentPayments,
                 agreementCount, frozenCount, paidCount,
             })
-        }
-        load()
-    }, [])
+    }
+
+    useEffect(() => { load() }, [])
 
     const {
         totalLent, collectedThisMonth, pendingBalance, activeClients,
@@ -358,11 +360,21 @@ export default function Dashboard() {
                 <p className="font-semibold text-gray-700 dark:text-gray-200 mb-2 px-1">Acciones rápidas</p>
                 <div className="grid grid-cols-2 gap-3">
                     <QuickAction label="Nuevo préstamo" Icon={CalendarPlus} color="blue" onClick={() => navigate('/new-loan')} />
-                    <QuickAction label="Registrar pago" Icon={HandCoins} color="green" onClick={() => navigate('/loans')} />
+                    <QuickAction label="Retirar capital" Icon={Banknote} color="red" onClick={() => setShowWithdraw(true)} />
                     <QuickAction label="Nuevo cliente" Icon={UserPlus} color="purple" onClick={() => navigate('/clients/new')} />
                     <QuickAction label="Ver reportes" Icon={FileBarChart} color="amber" onClick={() => navigate('/reports')} />
                 </div>
             </div>
+
+            {showWithdraw && (
+                <WithdrawCapitalModal
+                    onClose={() => setShowWithdraw(false)}
+                    onDone={() => {
+                        setShowWithdraw(false)
+                        load()
+                    }}
+                />
+            )}
         </div>
     )
 }
@@ -460,6 +472,7 @@ function QuickAction({ label, Icon, color, onClick }) {
         green: 'bg-green-50 dark:bg-green-950/40 text-green-600 dark:text-green-400',
         purple: 'bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400',
         amber: 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400',
+        red: 'bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400',
     }
     return (
         <button
@@ -469,5 +482,74 @@ function QuickAction({ label, Icon, color, onClick }) {
             <Icon size={20} />
             <span className="text-sm font-semibold leading-tight">{label}</span>
         </button>
+    )
+}
+
+function WithdrawCapitalModal({ onClose, onDone }) {
+    const [amount, setAmount] = useState('')
+    const [notes, setNotes] = useState('')
+    const [saving, setSaving] = useState(false)
+
+    const parsedAmount = parseFloat(amount) || 0
+
+    async function handleSave() {
+        if (!parsedAmount) return
+        setSaving(true)
+        const { error } = await supabase.from('capital_withdrawals').insert({
+            amount: parsedAmount,
+            notes: notes.trim() || null,
+        })
+        if (error) {
+            console.error('Error al registrar retiro de capital:', error)
+            alert('No se pudo registrar el retiro: ' + error.message)
+            setSaving(false)
+            return
+        }
+        onDone()
+    }
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60">
+            <div className="w-full max-w-md bg-white dark:bg-gray-900 rounded-t-3xl p-6 pb-24">
+                <div className="flex justify-between items-center mb-4">
+                    <h2 className="font-bold text-gray-900 dark:text-white text-lg">Retirar capital</h2>
+                    <button onClick={onClose}>
+                        <X size={20} className="text-gray-400" />
+                    </button>
+                </div>
+                <div className="space-y-3">
+                    <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/40 rounded-xl px-3 py-2 text-xs text-red-500 dark:text-red-300">
+                        Este dinero se resta del capital prestable del negocio. No es un préstamo ni una ganancia.
+                    </div>
+                    <div>
+                        <label className="text-sm text-gray-500 dark:text-gray-400 mb-1 block">Monto a retirar</label>
+                        <input
+                            type="number"
+                            value={amount}
+                            onChange={(e) => setAmount(e.target.value)}
+                            placeholder="0"
+                            className="w-full bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-red-500"
+                        />
+                    </div>
+                    <div>
+                        <label className="text-sm text-gray-500 dark:text-gray-400 mb-1 block">Nota (opcional)</label>
+                        <textarea
+                            rows={3}
+                            value={notes}
+                            onChange={(e) => setNotes(e.target.value)}
+                            placeholder="Ej: Retiro personal, gasto del negocio..."
+                            className="w-full bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-red-500 text-sm resize-none"
+                        />
+                    </div>
+                    <button
+                        onClick={handleSave}
+                        disabled={saving || !parsedAmount}
+                        className="w-full bg-red-600 text-white font-semibold py-3 rounded-2xl active:scale-95 transition disabled:opacity-50"
+                    >
+                        {saving ? 'Guardando...' : 'Confirmar retiro'}
+                    </button>
+                </div>
+            </div>
+        </div>
     )
 }
