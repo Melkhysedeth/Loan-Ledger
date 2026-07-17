@@ -226,7 +226,7 @@ function MetricRow({ label, value, valueClass, Icon, last }) {
 function WithdrawHistoryModal({ withdrawals, total, onClose }) {
     return (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60">
-            <div className="w-full max-w-md bg-white dark:bg-gray-900 rounded-t-3xl pt-6 pb-10 max-h-[80vh] flex flex-col">
+            <div className="w-full max-w-md bg-white dark:bg-gray-900 rounded-t-3xl pt-6 pb-6 max-h-[90vh] flex flex-col">
                 <div className="flex justify-between items-center mb-1 px-6">
                     <div>
                         <h2 className="font-bold text-gray-900 dark:text-white text-lg">Historial de retiros</h2>
@@ -236,7 +236,7 @@ function WithdrawHistoryModal({ withdrawals, total, onClose }) {
                         <X size={20} className="text-gray-400" />
                     </button>
                 </div>
-                <div className="overflow-y-auto mt-3">
+                <div className="overflow-y-auto mt-3 pb-20">
                     {withdrawals.length === 0 ? (
                         <p className="text-sm text-gray-400 text-center py-8">Sin retiros registrados</p>
                     ) : (
