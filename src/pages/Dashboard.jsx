@@ -32,6 +32,7 @@ export default function Dashboard() {
     const navigate = useNavigate()
     const [stats, setStats] = useState({
         totalLent: 0,
+        availableCapital: 0,
         collectedThisMonth: 0,
         pendingBalance: 0,
         activeClients: 0,
@@ -51,116 +52,140 @@ export default function Dashboard() {
     const { user } = useAuth()
     const userName = user?.user_metadata?.full_name?.split(' ')[0] || 'usuario'
     const [showWithdraw, setShowWithdraw] = useState(false)
+    const [showInject, setShowInject] = useState(false)
 
     async function load() {
-            const now = new Date()
-            const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
+        const now = new Date()
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
 
-            const [{ data: clients }, { data: loans }, { data: payments }, { data: withdrawals }] = await Promise.all([
-                supabase.from('clients').select('*'),
-                supabase.from('loans').select('*'),
-                supabase.from('payments').select('*').order('date', { ascending: false }),
-                supabase.from('capital_withdrawals').select('amount'),
-            ])
+        const [{ data: clients }, { data: loans }, { data: payments }, { data: withdrawals }, { data: injections }] = await Promise.all([
+            supabase.from('clients').select('*'),
+            supabase.from('loans').select('*'),
+            supabase.from('payments').select('*').order('date', { ascending: false }),
+            supabase.from('capital_withdrawals').select('amount, date'),
+            supabase.from('capital_injections').select('*').order('date', { ascending: true }),
+        ])
 
-            const allLoans = loans || []
-            const allClients = clients || []
-            const allPayments = payments || []
-            const totalWithdrawn = (withdrawals || []).reduce((s, w) => s + (w.amount || 0), 0)
+        const allLoans = loans || []
+        const allClients = clients || []
+        const allPayments = payments || []
+        const totalWithdrawn = (withdrawals || []).reduce((s, w) => s + (w.amount || 0), 0)
 
-            const activeLoans = allLoans.filter(l => ['active', 'overdue', 'frozen', 'agreement'].includes(l.status))
-            const onTimeLoans = allLoans.filter(l => ['active', 'frozen', 'agreement'].includes(l.status))
-            const totalLent = activeLoans.reduce((s, l) => s + (l.amount || 0), 0) - totalWithdrawn
+        // ── Disponible para prestar ──
+        // Se ancla en la fecha de tu primera inyección (el ajuste inicial).
+        // Todo lo anterior a esa fecha no se cuenta, tal como acordamos.
+        const allInjections = injections || []
+        const totalInjections = allInjections.reduce((s, i) => s + (i.amount || 0), 0)
+        const trackingStartDate = allInjections.length > 0 ? allInjections[0].date : null
 
-            const collectedThisMonth = allPayments
-                .filter(p => p.date >= startOfMonth.split('T')[0])
+        let availableCapital = 0
+        if (trackingStartDate) {
+            const collectedSinceStart = allPayments
+                .filter(p => p.date >= trackingStartDate)
+                .reduce((s, p) => s + (p.total_paid || 0), 0)
+            const lentSinceStart = allLoans
+                .filter(l => l.start_date && l.start_date >= trackingStartDate)
+                .reduce((s, l) => s + (l.amount || 0), 0)
+            const withdrawnSinceStart = (withdrawals || [])
+                .filter(w => w.date >= trackingStartDate)
+                .reduce((s, w) => s + (w.amount || 0), 0)
+
+            availableCapital = totalInjections + collectedSinceStart - lentSinceStart - withdrawnSinceStart
+        }
+
+        const activeLoans = allLoans.filter(l => ['active', 'overdue', 'frozen', 'agreement'].includes(l.status))
+        const onTimeLoans = allLoans.filter(l => ['active', 'frozen', 'agreement'].includes(l.status))
+        const totalLent = activeLoans.reduce((s, l) => s + (l.amount || 0), 0) - totalWithdrawn
+
+        const collectedThisMonth = allPayments
+            .filter(p => p.date >= startOfMonth.split('T')[0])
+            .reduce((s, p) => s + (p.total_paid || 0), 0)
+
+        // Saldo pendiente: capital de préstamos activos menos lo ya pagado
+        const pendingBalance = activeLoans.reduce((s, l) => {
+            const paid = allPayments.filter(p => p.loan_id === l.id).reduce((a, p) => a + (p.capital_paid || 0), 0)
+            return s + (l.amount - paid)
+        }, 0)
+
+        const activeClients = allClients.filter(c => c.status === 'active').length
+
+        // Mora y próximos usando loanCalc (igual que Collections)
+        const overdue = []
+        const dueSoon = []
+
+        for (const loan of activeLoans) {
+            if (!loan.first_payment_date) continue
+            const loanPayments = allPayments.filter(p => p.loan_id === loan.id)
+            const paymentsMade = loanPayments.length
+            const classification = classifyLoan(loan.first_payment_date, loan.frequency, paymentsMade)
+            const client = allClients.find(c => c.id === loan.client_id)
+
+            if (classification === 'overdue') overdue.push({ ...loan, client })
+            if (classification === 'today' || classification === 'soon') dueSoon.push({ ...loan, client })
+        }
+
+        // Gráfica: últimos 6 meses
+        const monthlyData = Array.from({ length: 6 }, (_, i) => {
+            const d = new Date(now.getFullYear(), now.getMonth() - 5 + i, 1)
+            const nextMonth = new Date(d.getFullYear(), d.getMonth() + 1, 1)
+            const dStr = d.toISOString().split('T')[0]
+            const nStr = nextMonth.toISOString().split('T')[0]
+
+            const cobrado = allPayments
+                .filter(p => p.date && p.date >= dStr && p.date < nStr)
                 .reduce((s, p) => s + (p.total_paid || 0), 0)
 
-            // Saldo pendiente: capital de préstamos activos menos lo ya pagado
-            const pendingBalance = activeLoans.reduce((s, l) => {
-                const paid = allPayments.filter(p => p.loan_id === l.id).reduce((a, p) => a + (p.capital_paid || 0), 0)
-                return s + (l.amount - paid)
-            }, 0)
+            const prestado = allLoans
+                .filter(l => l.start_date && l.start_date >= dStr && l.start_date < nStr)
+                .reduce((s, l) => s + (l.amount || 0), 0)
 
-            const activeClients = allClients.filter(c => c.status === 'active').length
+            return { month: MONTHS[d.getMonth()], cobrado, prestado }
+        })
 
-            // Mora y próximos usando loanCalc (igual que Collections)
-            const overdue = []
-            const dueSoon = []
+        const attention = [
+            ...overdue.map(l => ({ ...l, tag: 'overdue' })),
+            ...dueSoon.map(l => ({ ...l, tag: 'dueSoon' })),
+        ].slice(0, 4)
 
-            for (const loan of activeLoans) {
-                if (!loan.first_payment_date) continue
-                const loanPayments = allPayments.filter(p => p.loan_id === loan.id)
-                const paymentsMade = loanPayments.length
-                const classification = classifyLoan(loan.first_payment_date, loan.frequency, paymentsMade)
-                const client = allClients.find(c => c.id === loan.client_id)
+        // Distribución de estado para la dona
+        const statusCounts = allLoans.reduce((acc, l) => {
+            acc[l.status] = (acc[l.status] || 0) + 1
+            return acc
+        }, {})
+        const agreementCount = statusCounts['agreement'] || 0
+        const frozenCount = statusCounts['frozen'] || 0
+        const paidCount = statusCounts['paid'] || 0
+        const totalLoansCount = allLoans.length
+        const statusDistribution = Object.entries(statusCounts)
+            .filter(([status]) => STATUS_LABELS[status])
+            .map(([status, count]) => ({
+                status,
+                label: STATUS_LABELS[status].label,
+                color: STATUS_LABELS[status].color,
+                count,
+                pct: totalLoansCount ? Math.round((count / totalLoansCount) * 100) : 0,
+            }))
+            .sort((a, b) => b.count - a.count)
 
-                if (classification === 'overdue') overdue.push({ ...loan, client })
-                if (classification === 'today' || classification === 'soon') dueSoon.push({ ...loan, client })
-            }
+        // Pagos recientes (últimos 5) enriquecidos con nombre de cliente
+        const recentPayments = allPayments.slice(0, 4).map(p => {
+            const loan = allLoans.find(l => l.id === p.loan_id)
+            const client = loan ? allClients.find(c => c.id === loan.client_id) : null
+            return { ...p, client, loan }
+        })
 
-            // Gráfica: últimos 6 meses
-            const monthlyData = Array.from({ length: 6 }, (_, i) => {
-                const d = new Date(now.getFullYear(), now.getMonth() - 5 + i, 1)
-                const nextMonth = new Date(d.getFullYear(), d.getMonth() + 1, 1)
-                const dStr = d.toISOString().split('T')[0]
-                const nStr = nextMonth.toISOString().split('T')[0]
-
-                const cobrado = allPayments
-                    .filter(p => p.date && p.date >= dStr && p.date < nStr)
-                    .reduce((s, p) => s + (p.total_paid || 0), 0)
-
-                const prestado = allLoans
-                    .filter(l => l.start_date && l.start_date >= dStr && l.start_date < nStr)
-                    .reduce((s, l) => s + (l.amount || 0), 0)
-
-                return { month: MONTHS[d.getMonth()], cobrado, prestado }
-            })
-
-            const attention = [
-                ...overdue.map(l => ({ ...l, tag: 'overdue' })),
-                ...dueSoon.map(l => ({ ...l, tag: 'dueSoon' })),
-            ].slice(0, 4)
-
-            // Distribución de estado para la dona
-            const statusCounts = allLoans.reduce((acc, l) => {
-                acc[l.status] = (acc[l.status] || 0) + 1
-                return acc
-            }, {})
-            const agreementCount = statusCounts['agreement'] || 0
-            const frozenCount = statusCounts['frozen'] || 0
-            const paidCount = statusCounts['paid'] || 0
-            const totalLoansCount = allLoans.length
-            const statusDistribution = Object.entries(statusCounts)
-                .filter(([status]) => STATUS_LABELS[status])
-                .map(([status, count]) => ({
-                    status,
-                    label: STATUS_LABELS[status].label,
-                    color: STATUS_LABELS[status].color,
-                    count,
-                    pct: totalLoansCount ? Math.round((count / totalLoansCount) * 100) : 0,
-                }))
-                .sort((a, b) => b.count - a.count)
-
-            // Pagos recientes (últimos 5) enriquecidos con nombre de cliente
-            const recentPayments = allPayments.slice(0, 4).map(p => {
-                const loan = allLoans.find(l => l.id === p.loan_id)
-                const client = loan ? allClients.find(c => c.id === loan.client_id) : null
-                return { ...p, client, loan }
-            })
-
-            setStats({
-                totalLent, collectedThisMonth, pendingBalance, activeClients,
-                activeLoans: activeLoans.length, onTime: onTimeLoans.length, overdue, dueSoon, monthlyData,
-                attention, statusDistribution, recentPayments,
-                agreementCount, frozenCount, paidCount,
-            })
+        setStats({
+            totalLent, collectedThisMonth, pendingBalance, activeClients, availableCapital,
+            activeLoans: activeLoans.length, onTime: onTimeLoans.length, overdue, dueSoon, monthlyData,
+            attention, statusDistribution, recentPayments,
+            agreementCount, frozenCount, paidCount,
+        })
     }
 
     useEffect(() => { load() }, [])
 
     const {
-        totalLent, collectedThisMonth, pendingBalance, activeClients,
+        totalLent, collectedThisMonth, pendingBalance, activeClients, availableCapital,
         activeLoans, onTime, overdue, dueSoon, monthlyData, attention,
         statusDistribution, recentPayments,
         agreementCount, frozenCount, paidCount,
@@ -188,12 +213,21 @@ export default function Dashboard() {
             <Carousel>
                 <div className="grid grid-cols-2 gap-3">
                     <MetricCard
+                        label="Disponible para prestar"
+                        sub="capital libre"
+                        value={formatCOP(availableCapital)}
+                        color="green"
+                        Icon={Banknote}
+                    />
+                    <MetricCard
                         label="Total prestado"
                         sub="vs. mes anterior"
                         value={formatCOP(totalLent)}
                         color="blue"
                         Icon={Wallet}
                     />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
                     <MetricCard
                         label="Total cobrado"
                         sub="este mes"
@@ -201,8 +235,6 @@ export default function Dashboard() {
                         color="green"
                         Icon={DollarSign}
                     />
-                </div>
-                <div className="grid grid-cols-2 gap-3">
                     <MetricCard
                         label="Saldo pendiente"
                         sub="por cobrar"
@@ -210,6 +242,8 @@ export default function Dashboard() {
                         color="amber"
                         Icon={LayoutList}
                     />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
                     <MetricCard
                         label="Clientes activos"
                         sub="vs. mes anterior"
@@ -361,6 +395,7 @@ export default function Dashboard() {
                 <div className="grid grid-cols-2 gap-3">
                     <QuickAction label="Nuevo préstamo" Icon={CalendarPlus} color="blue" onClick={() => navigate('/new-loan')} />
                     <QuickAction label="Retirar capital" Icon={Banknote} color="red" onClick={() => setShowWithdraw(true)} />
+                    <QuickAction label="Inyectar capital" Icon={Banknote} color="green" onClick={() => setShowInject(true)} />
                     <QuickAction label="Nuevo cliente" Icon={UserPlus} color="purple" onClick={() => navigate('/clients/new')} />
                     <QuickAction label="Ver reportes" Icon={FileBarChart} color="amber" onClick={() => navigate('/reports')} />
                 </div>
@@ -371,6 +406,15 @@ export default function Dashboard() {
                     onClose={() => setShowWithdraw(false)}
                     onDone={() => {
                         setShowWithdraw(false)
+                        load()
+                    }}
+                />
+            )}
+            {showInject && (
+                <InjectCapitalModal
+                    onClose={() => setShowInject(false)}
+                    onDone={() => {
+                        setShowInject(false)
                         load()
                     }}
                 />
@@ -547,6 +591,75 @@ function WithdrawCapitalModal({ onClose, onDone }) {
                         className="w-full bg-red-600 text-white font-semibold py-3 rounded-2xl active:scale-95 transition disabled:opacity-50"
                     >
                         {saving ? 'Guardando...' : 'Confirmar retiro'}
+                    </button>
+                </div>
+            </div>
+        </div>
+    )
+}
+
+function InjectCapitalModal({ onClose, onDone }) {
+    const [amount, setAmount] = useState('')
+    const [notes, setNotes] = useState('')
+    const [saving, setSaving] = useState(false)
+
+    const parsedAmount = parseFloat(amount) || 0
+
+    async function handleSave() {
+        if (!parsedAmount) return
+        setSaving(true)
+        const { error } = await supabase.from('capital_injections').insert({
+            amount: parsedAmount,
+            notes: notes.trim() || null,
+        })
+        if (error) {
+            console.error('Error al registrar inyección de capital:', error)
+            alert('No se pudo registrar la inyección: ' + error.message)
+            setSaving(false)
+            return
+        }
+        onDone()
+    }
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60">
+            <div className="w-full max-w-md bg-white dark:bg-gray-900 rounded-t-3xl p-6 pb-24">
+                <div className="flex justify-between items-center mb-4">
+                    <h2 className="font-bold text-gray-900 dark:text-white text-lg">Inyectar capital</h2>
+                    <button onClick={onClose}>
+                        <X size={20} className="text-gray-400" />
+                    </button>
+                </div>
+                <div className="space-y-3">
+                    <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800/40 rounded-xl px-3 py-2 text-xs text-green-600 dark:text-green-300">
+                        Este dinero aumenta el capital disponible para prestar.
+                    </div>
+                    <div>
+                        <label className="text-sm text-gray-500 dark:text-gray-400 mb-1 block">Monto a inyectar</label>
+                        <input
+                            type="number"
+                            value={amount}
+                            onChange={(e) => setAmount(e.target.value)}
+                            placeholder="0"
+                            className="w-full bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                        />
+                    </div>
+                    <div>
+                        <label className="text-sm text-gray-500 dark:text-gray-400 mb-1 block">Nota (opcional)</label>
+                        <textarea
+                            rows={3}
+                            value={notes}
+                            onChange={(e) => setNotes(e.target.value)}
+                            placeholder="Ej: Ahorro personal, préstamo de un tercero..."
+                            className="w-full bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 text-sm resize-none"
+                        />
+                    </div>
+                    <button
+                        onClick={handleSave}
+                        disabled={saving || !parsedAmount}
+                        className="w-full bg-green-600 text-white font-semibold py-3 rounded-2xl active:scale-95 transition disabled:opacity-50"
+                    >
+                        {saving ? 'Guardando...' : 'Confirmar inyección'}
                     </button>
                 </div>
             </div>
