@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, NavLink, Navigate } from 'react-router-do
 import Dashboard from './pages/Dashboard'
 import Clients from './pages/Clients'
 import NewLoan from './pages/NewLoan'
+import UnifyLoans from './pages/UnifyLoans'
 import Reports from './pages/Reports'
 import NewClient from './pages/NewClient'
 import Loans from './pages/Loans'
@@ -11,6 +12,7 @@ import Collections from './pages/Collections'
 import ClientDetail from './pages/ClientDetail'
 import More from './pages/More'
 import Login from './pages/Login'
+import ResetPassword from './pages/ResetPassword'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { CreditCard } from 'lucide-react'
 import { useInactivity } from './hooks/useInactivity'
@@ -113,6 +115,8 @@ function AppRoutes() {
         <Route path="/reports" element={<Reports />} />
         <Route path="*" element={<Navigate to="/" replace />} />
         <Route path="/loans/:id/pay" element={<PaymentScreen />} />
+        <Route path="/clients/:id/unify-loans" element={<UnifyLoans />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
       </Routes>
       <BottomNav />
     </div>

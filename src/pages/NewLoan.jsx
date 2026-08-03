@@ -29,6 +29,7 @@ export default function NewLoan() {
     const [selectedClient, setSelectedClient] = useState(null)
     const [loan, setLoan] = useState(initialLoan)
     const [saving, setSaving] = useState(false)
+    const [method, setMethod] = useState('efectivo')
 
     const amount = parseCOP(loan.amount)
     const rate = parseFloat(loan.rate) || 0
@@ -66,6 +67,8 @@ export default function NewLoan() {
             interestType: editLoan.interest_type || 'fixed',
             numPayments: editLoan.num_payments?.toString() || '',
         })
+
+        setMethod(editLoan.payment_method || 'efectivo')
 
         // El préstamo trae client_id, pero no el objeto cliente completo —
         // lo traemos para poder mostrarlo en la sección "Cliente"
@@ -151,6 +154,7 @@ export default function NewLoan() {
                 start_date: loan.startDate,
                 first_payment_date: loan.firstPaymentDate || null,
                 notes: loan.notes,
+                payment_method: method,
             }
 
             if (isEditing) {
@@ -259,6 +263,24 @@ export default function NewLoan() {
                                     >
                                         Interés variable
                                     </button>
+                                </div>
+                            </div>
+                            <div>
+                                <label className="text-sm text-gray-500 dark:text-gray-400 mb-1 block">Método de desembolso</label>
+                                <div className="grid grid-cols-3 gap-2">
+                                    {['efectivo', 'nequi', 'breb'].map(m => (
+                                        <button
+                                            key={m}
+                                            type="button"
+                                            onClick={() => setMethod(m)}
+                                            className={`py-2 rounded-xl text-sm font-medium border transition ${method === m
+                                                ? 'bg-blue-600 text-white border-blue-600'
+                                                : 'bg-white dark:bg-gray-900 text-gray-500 border-gray-200 dark:border-gray-700'
+                                                }`}
+                                        >
+                                            {m === 'breb' ? 'Bre-B' : m.charAt(0).toUpperCase() + m.slice(1)}
+                                        </button>
+                                    ))}
                                 </div>
                             </div>
                             <div>

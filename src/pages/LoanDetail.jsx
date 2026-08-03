@@ -87,8 +87,8 @@ export default function LoanDetail() {
   // para mostrarse en el historial con su motivo.
   const activePayments = payments.filter(p => !p.voided)
 
-  const totalPaid = activePayments.reduce((s, p) => s + (p.capital_paid || 0), 0)
-  const totalInterestPaid = activePayments.reduce((s, p) => s + (p.interest_paid || 0), 0)
+  const totalPaid = activePayments.reduce((s, p) => s + (p.capital_paid || 0), 0) + (loan.initial_capital_paid || 0)
+  const totalInterestPaid = activePayments.reduce((s, p) => s + (p.interest_paid || 0), 0) + (loan.initial_interest_paid || 0)
   const remaining = loan.amount - totalPaid
   const paymentsMade = activePayments.length
 

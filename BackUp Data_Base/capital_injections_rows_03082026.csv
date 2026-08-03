@@ -1,0 +1,5 @@
+id,amount,date,notes,created_at,payment_method,exclude_from_total
+45613f67-820e-495c-8e18-840cd540b475,1445000,2026-08-03,Saldo inicial real - ajuste manual,2026-08-03 02:08:55.353291,nequi,true
+5900ba64-29ae-4d00-ae63-15ee820e2fdd,1800000,2026-07-21,Ajuste inicial - disponible real al 21 jul 2026,2026-07-21 16:39:58.039278,,false
+5f320e3b-599d-44f2-b940-f9a3079259d1,0,2026-08-03,Saldo inicial real - ajuste manual,2026-08-03 02:08:55.353291,efectivo,true
+837efb90-6e03-41c4-be2b-459a04bdfaab,190000,2026-08-03,Saldo inicial real - ajuste manual,2026-08-03 02:08:55.353291,breb,true

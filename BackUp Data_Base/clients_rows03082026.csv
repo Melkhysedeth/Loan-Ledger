@@ -1,0 +1,36 @@
+id,name,phone,cedula,address,notes,status,ranking_override,created_at
+075fe3c1-dc05-4cf8-8d4f-dcbccdfca9b3,Loraine (uñas),3234167820,,Nvo Horizonte,,active,,2026-06-21 02:55:37.649548+00
+08733932-f235-4f86-b87c-51125e97c88b,"Amiga De Zayda ",3008880000,,"Caribe Verde ",,active,,2026-06-23 02:15:13.293301+00
+0d5a4354-d408-4863-938c-39e609bbcea1,"Carlos Mario ",3003229726,,"Sabanalarga ",,active,,2026-06-17 02:54:23.982876+00
+12440fa7-295b-4988-9719-f30b9257d235,Denisse,3012624759,,"Soledad ","Cuotas acordadas rebajado capital e intereses ",active,,2026-06-17 02:36:48.20645+00
+19f2b765-95c5-4d2b-a439-269446e5124c,Melquisedec Barcinilla,3114357645,1129582888,Calle 26C 5A-56,,active,,2026-06-12 21:32:47.081936+00
+1d6583e5-842b-4551-8b37-af8ee3591643,Rodolfo Niño,3155847050,,Barranquilla,,active,,2026-06-21 02:57:34.03337+00
+256d1e8d-283f-4d32-b057-1e463ea08993,Andry Niebles,3246824171,1043019730,Calle 26C 5A 03,,active,,2026-06-12 21:36:50.912109+00
+3251596c-c536-44a7-88ad-8670a4c0dc69,"Ricardo González ",3015207155,,"Sabanalarga ",,active,,2026-06-23 02:04:36.225416+00
+33b612c9-e686-4f2d-a5b8-4a0d5f73f391,Mildred Hdez (Nene),3233379510,,Barrio Paraiso,,active,,2026-06-26 14:13:47.997449+00
+345ac191-1910-4158-84c6-85bd47ebb69e,Geraldine Agamez,3177781545,,Sta Sofia,,active,,2026-06-21 02:50:59.48077+00
+35c43a44-5765-4367-beef-002763fa8bac,Greicy Niebles,3017306176,,Mirador de la Sabana,,active,,2026-06-21 03:01:16.059268+00
+39cec8f1-9850-48fd-8889-faab3aea6c2c,James Barcinilla,3112178064,,Santa Sofía Sabanagrande,,active,,2026-06-13 02:35:32.963947+00
+4730c83c-2a4e-4bee-95ff-9825c600d3a9,Jesús Martinez,3016692551,,"Sabanalarga ",,active,,2026-06-23 02:01:37.786116+00
+47eee750-d82d-43dc-9b6a-00377386bfdc,Eva Escorcia,3134330989,,Nvo Horizonte,,active,,2026-06-21 02:42:16.30914+00
+4d0f6549-1a25-4849-939a-49b07e787496,Lily Cham,3015418164,,"Isabel López ",,active,,2026-07-01 02:10:22.410335+00
+5415fc6c-9274-469e-878e-380f9e071b0f,Jairo,3024183478,,Barranquilla,,active,,2026-06-21 02:58:40.571996+00
+59d3dc25-048d-4865-b678-b4f0b4a88151,Carlos Peña,3005393362,,"Sabanalarga ",,active,,2026-06-23 02:12:42.406082+00
+5a7ca488-28fd-422d-948c-fc7579e23657,"Brayan Estrada ",3003046359,,"Barrio paraíso ",,active,,2026-06-13 02:43:51.394861+00
+5d04106f-7ae8-4d12-afd8-6508778d437b,Jesus Berdugo,3104428975,,S/Larga,,active,,2026-06-21 02:46:40.924389+00
+63e3b104-02bc-4ff9-a3ce-e6413d05e60b,"Zayda Núñez ",3104011592,,"Caribe verde ",,active,,2026-06-23 02:16:57.261267+00
+64f75664-1d4e-4942-95af-19c024b8c2dd,Jeison Dorado,3008272159,,Sabanalarga,,active,,2026-06-16 13:38:13.333989+00
+6b5833df-85b8-4f06-8ac2-1e6343bbde0a,Andreina Zambrano,3026656916,,"Malambo ",,active,,2026-06-23 02:11:04.194977+00
+702ead24-88f8-4fa1-8849-18e737e91150,Yeimi Amariz,3006490549,,Mutual,,active,,2026-07-18 01:04:57.715625+00
+7d8f3aac-a90b-4291-b5bf-3cdfcccd486f,Hugo (Angie),3016450741,,Pradito,,active,,2026-06-17 02:58:14.146558+00
+8323852f-681a-4c6c-a678-9253aab579af,"Jennifer González ",3012246755,,"Barranquilla ",,active,,2026-06-23 02:20:56.991666+00
+910b68e7-caf7-441f-8e9d-cbb91d32c83c,"Saray Escorcia ",3008880000,,"Bola de oro ",,active,,2026-06-23 02:07:35.622616+00
+be7824a7-743b-4bac-b3c2-902d433a8fcf,"Luis Cuñado Velaida ",3005550591,,"Malambo ",,active,,2026-06-17 02:52:43.549008+00
+ce4d362f-7219-4062-a421-18cbe2d7ec59,"Velaida Velázquez ",3005550591,,"El Concord ",,active,,2026-07-05 15:48:42.21566+00
+dd6d4abd-372f-47d1-a5ab-89a851b2b2fa,"Ronald Márquez ",3002369990,,"La playa ",,active,,2026-06-13 02:46:48.789839+00
+e2f3b1f6-09df-46f5-9568-27189e7bead4,"Mary Dorado ",3016477650,,"Sabanalarga ",,active,,2026-06-23 02:17:53.159026+00
+ea6fb5af-0aec-4925-bae2-28dddf673e86,Fernando Tuiran,3007143190,,"Barranquilla ",,active,,2026-06-17 02:51:29.895411+00
+ef2177ba-74fa-4a10-8335-97a30f56b524,Milagro Zambrano,3046450741,,S/Larga,,active,,2026-06-21 02:38:20.063635+00
+f2327c76-fd13-48b1-afe6-9fc2cf590440,Yulissa Mendoza,3043233421,,Bco Occidente,,active,,2026-08-03 00:21:03.108379+00
+fc17cd10-e460-4aab-b4c0-0ff891ca3712,"Karen Rivera ",3003513542,,"Sabanalarga ",,active,,2026-06-17 02:43:40.024814+00
+ffb9cfaf-5e35-4fd3-9a46-1471ed812224,Óscar (Lily),3023493871,,"Isabel López ",,active,,2026-06-23 02:14:09.711339+00

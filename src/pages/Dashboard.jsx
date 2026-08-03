@@ -33,6 +33,7 @@ export default function Dashboard() {
     const [stats, setStats] = useState({
         totalLent: 0,
         availableCapital: 0,
+        capitalByMethod: { efectivo: 0, nequi: 0, breb: 0 },
         collectedThisMonth: 0,
         pendingBalance: 0,
         activeClients: 0,
@@ -52,6 +53,7 @@ export default function Dashboard() {
     const { user } = useAuth()
     const userName = user?.user_metadata?.full_name?.split(' ')[0] || 'usuario'
     const [showWithdraw, setShowWithdraw] = useState(false)
+    const [showBreakdown, setShowBreakdown] = useState(false)
     const [showInject, setShowInject] = useState(false)
 
     async function load() {
@@ -75,7 +77,9 @@ export default function Dashboard() {
         // Se ancla en la fecha de tu primera inyección (el ajuste inicial).
         // Todo lo anterior a esa fecha no se cuenta, tal como acordamos.
         const allInjections = injections || []
-        const totalInjections = allInjections.reduce((s, i) => s + (i.amount || 0), 0)
+        const totalInjections = allInjections
+            .filter(i => !i.exclude_from_total)
+            .reduce((s, i) => s + (i.amount || 0), 0)
         const trackingStartDate = allInjections.length > 0 ? allInjections[0].date : null
 
         let availableCapital = 0
@@ -84,13 +88,37 @@ export default function Dashboard() {
                 .filter(p => p.date >= trackingStartDate)
                 .reduce((s, p) => s + (p.total_paid || 0), 0)
             const lentSinceStart = allLoans
-                .filter(l => l.start_date && l.start_date >= trackingStartDate)
+                .filter(l => l.start_date && l.start_date >= trackingStartDate && !l.is_unification)
                 .reduce((s, l) => s + (l.amount || 0), 0)
             const withdrawnSinceStart = (withdrawals || [])
                 .filter(w => w.date >= trackingStartDate)
                 .reduce((s, w) => s + (w.amount || 0), 0)
 
             availableCapital = totalInjections + collectedSinceStart - lentSinceStart - withdrawnSinceStart
+        }
+
+        function capitalByMethod(method) {
+            const methodInjections = allInjections.filter(i => i.payment_method === method)
+            if (methodInjections.length === 0) return 0
+            const start = methodInjections[0].date
+            const inj = methodInjections.reduce((s, i) => s + (i.amount || 0), 0)
+            const collected = allPayments.reduce((s, p) => {
+                if (p.date < start) return s
+                if (p.payment_method === method) return s + (p.total_paid || 0)
+                if (p.method_breakdown?.[method]) return s + p.method_breakdown[method]
+                return s
+            }, 0)
+            const lent = allLoans.filter(l => l.payment_method === method && l.start_date >= start && !l.is_unification)
+                .reduce((s, l) => s + (l.amount || 0), 0)
+            const withdrawn = (withdrawals || []).filter(w => w.payment_method === method && w.date >= start)
+                .reduce((s, w) => s + (w.amount || 0), 0)
+            return inj + collected - lent - withdrawn
+        }
+
+        const capitalByMethodResult = {
+            efectivo: capitalByMethod('efectivo'),
+            nequi: capitalByMethod('nequi'),
+            breb: capitalByMethod('breb'),
         }
 
         const activeLoans = allLoans.filter(l => ['active', 'overdue', 'frozen', 'agreement'].includes(l.status))
@@ -103,7 +131,7 @@ export default function Dashboard() {
 
         // Saldo pendiente: capital de préstamos activos menos lo ya pagado
         const pendingBalance = activeLoans.reduce((s, l) => {
-            const paid = allPayments.filter(p => p.loan_id === l.id).reduce((a, p) => a + (p.capital_paid || 0), 0)
+            const paid = allPayments.filter(p => p.loan_id === l.id).reduce((a, p) => a + (p.capital_paid || 0), 0) + (l.initial_capital_paid || 0)
             return s + (l.amount - paid)
         }, 0)
 
@@ -136,7 +164,7 @@ export default function Dashboard() {
                 .reduce((s, p) => s + (p.total_paid || 0), 0)
 
             const prestado = allLoans
-                .filter(l => l.start_date && l.start_date >= dStr && l.start_date < nStr)
+                .filter(l => l.start_date && l.start_date >= dStr && l.start_date < nStr && !l.is_unification)
                 .reduce((s, l) => s + (l.amount || 0), 0)
 
             return { month: MONTHS[d.getMonth()], cobrado, prestado }
@@ -176,6 +204,7 @@ export default function Dashboard() {
 
         setStats({
             totalLent, collectedThisMonth, pendingBalance, activeClients, availableCapital,
+            capitalByMethod: capitalByMethodResult,
             activeLoans: activeLoans.length, onTime: onTimeLoans.length, overdue, dueSoon, monthlyData,
             attention, statusDistribution, recentPayments,
             agreementCount, frozenCount, paidCount,
@@ -186,6 +215,7 @@ export default function Dashboard() {
 
     const {
         totalLent, collectedThisMonth, pendingBalance, activeClients, availableCapital,
+        capitalByMethod,
         activeLoans, onTime, overdue, dueSoon, monthlyData, attention,
         statusDistribution, recentPayments,
         agreementCount, frozenCount, paidCount,
@@ -212,13 +242,15 @@ export default function Dashboard() {
             {/* Carrusel de métricas: 2 tarjetas por slide */}
             <Carousel>
                 <div className="grid grid-cols-2 gap-3">
-                    <MetricCard
-                        label="Disponible para prestar"
-                        sub="capital libre"
-                        value={formatCOP(availableCapital)}
-                        color="green"
-                        Icon={Banknote}
-                    />
+                    <div onClick={() => setShowBreakdown(true)} className="cursor-pointer active:scale-95 transition">
+                        <MetricCard
+                            label="Disponible para prestar"
+                            sub="capital libre"
+                            value={formatCOP(availableCapital)}
+                            color="green"
+                            Icon={Banknote}
+                        />
+                    </div>
                     <MetricCard
                         label="Total prestado"
                         sub="vs. mes anterior"
@@ -410,6 +442,13 @@ export default function Dashboard() {
                     }}
                 />
             )}
+            {showBreakdown && (
+                <CapitalBreakdownModal
+                    breakdown={capitalByMethod}
+                    total={availableCapital}
+                    onClose={() => setShowBreakdown(false)}
+                />
+            )}
             {showInject && (
                 <InjectCapitalModal
                     onClose={() => setShowInject(false)}
@@ -533,6 +572,7 @@ function WithdrawCapitalModal({ onClose, onDone }) {
     const [amount, setAmount] = useState('')
     const [notes, setNotes] = useState('')
     const [saving, setSaving] = useState(false)
+    const [method, setMethod] = useState('efectivo')
 
     const parsedAmount = parseFloat(amount) || 0
 
@@ -542,6 +582,7 @@ function WithdrawCapitalModal({ onClose, onDone }) {
         const { error } = await supabase.from('capital_withdrawals').insert({
             amount: parsedAmount,
             notes: notes.trim() || null,
+            payment_method: method,
         })
         if (error) {
             console.error('Error al registrar retiro de capital:', error)
@@ -602,6 +643,7 @@ function InjectCapitalModal({ onClose, onDone }) {
     const [amount, setAmount] = useState('')
     const [notes, setNotes] = useState('')
     const [saving, setSaving] = useState(false)
+    const [method, setMethod] = useState('efectivo')
 
     const parsedAmount = parseFloat(amount) || 0
 
@@ -611,6 +653,7 @@ function InjectCapitalModal({ onClose, onDone }) {
         const { error } = await supabase.from('capital_injections').insert({
             amount: parsedAmount,
             notes: notes.trim() || null,
+            payment_method: method,
         })
         if (error) {
             console.error('Error al registrar inyección de capital:', error)
@@ -661,6 +704,41 @@ function InjectCapitalModal({ onClose, onDone }) {
                     >
                         {saving ? 'Guardando...' : 'Confirmar inyección'}
                     </button>
+                </div>
+            </div>
+        </div>
+    )
+}
+
+function CapitalBreakdownModal({ breakdown, total, onClose }) {
+    const METHOD_INFO = {
+        efectivo: { label: 'Efectivo', color: 'bg-green-50 dark:bg-green-950/40 text-green-600' },
+        nequi: { label: 'Nequi', color: 'bg-purple-50 dark:bg-purple-950/40 text-purple-600' },
+        breb: { label: 'Bre-B', color: 'bg-blue-50 dark:bg-blue-950/40 text-blue-600' },
+    }
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60">
+            <div className="w-full max-w-md bg-white dark:bg-gray-900 rounded-t-3xl p-6 pb-28 max-h-[85vh] overflow-y-auto">
+                <div className="flex justify-between items-center mb-4">
+                    <h2 className="font-bold text-gray-900 dark:text-white text-lg">Disponible por método</h2>
+                    <button onClick={onClose}>
+                        <X size={20} className="text-gray-400" />
+                    </button>
+                </div>
+
+                <div className="space-y-3">
+                    {Object.entries(METHOD_INFO).map(([key, info]) => (
+                        <div key={key} className={`${info.color} rounded-2xl p-4 flex items-center justify-between`}>
+                            <span className="font-medium">{info.label}</span>
+                            <span className="font-bold text-lg">{formatCOP(breakdown[key] || 0)}</span>
+                        </div>
+                    ))}
+                </div>
+
+                <div className="border-t border-gray-100 dark:border-gray-700 mt-4 pt-4 flex items-center justify-between">
+                    <span className="text-sm text-gray-500 dark:text-gray-400">Total disponible</span>
+                    <span className="font-bold text-xl text-gray-800 dark:text-white">{formatCOP(total)}</span>
                 </div>
             </div>
         </div>

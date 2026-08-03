@@ -188,7 +188,7 @@ export function calcInterestCarryover(loan, payments = []) {
     // p.ej. LoanDetail los carga descendente para mostrarlos en UI)
     const sorted = [...payments].sort((a, b) => new Date(a.date) - new Date(b.date))
 
-    let capitalPaidSoFar = 0
+    let capitalPaidSoFar = loan.initial_capital_paid || 0
     let carryover = 0
 
     for (const p of sorted) {

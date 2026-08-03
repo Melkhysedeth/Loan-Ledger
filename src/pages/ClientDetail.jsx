@@ -15,6 +15,7 @@ const STATUS = {
   overdue: { label: 'En mora', color: 'text-red-700 bg-red-100 dark:text-red-400 dark:bg-red-900/30', Icon: Clock },
   paid: { label: 'Liquidado', color: 'text-gray-500 bg-gray-100 dark:text-gray-400 dark:bg-gray-700', Icon: CheckCircle },
   agreement: { label: 'Acuerdo especial', color: 'text-amber-700 bg-amber-100 dark:text-amber-400 dark:bg-amber-900/30', Icon: Clock },
+  unified: { label: 'Unificado', color: 'text-purple-700 bg-purple-100 dark:text-purple-400 dark:bg-purple-900/30', Icon: CheckCircle },
 }
 
 const TABS = ['Información', 'Préstamos', 'Pagos']
@@ -57,7 +58,7 @@ export default function ClientDetail() {
     </div>
   )
 
-  const activeLoans = loans.filter(l => l.status !== 'paid')
+  const activeLoans = loans.filter(l => l.status !== 'paid' && l.status !== 'unified')
   const paidLoans = loans.filter(l => l.status === 'paid')
 
   // Total prestado = suma de montos originales de préstamos no liquidados
@@ -67,10 +68,12 @@ export default function ClientDetail() {
   const totalCollected = payments.reduce((s, p) => s + (p.total_paid || 0), 0)
 
   // Capital ya pagado = suma de abonos a capital
-  const activeLoanIds = new Set(activeLoans.map(l => l.id))
-  const totalCapitalPagado = payments
-    .filter(p => activeLoanIds.has(p.loan_id))
-    .reduce((s, p) => s + (p.capital_paid || 0), 0)
+  const totalCapitalPagado = activeLoans.reduce((s, l) => {
+    const pagadoReal = payments
+      .filter(p => p.loan_id === l.id)
+      .reduce((a, p) => a + (p.capital_paid || 0), 0)
+    return s + pagadoReal + (l.initial_capital_paid || 0)
+  }, 0)
 
   // Saldo pendiente real = lo que falta por pagar de capital
   const totalPending = totalPrestado - totalCapitalPagado
@@ -284,6 +287,14 @@ export default function ClientDetail() {
         >
           <Pencil size={15} /> Editar cliente
         </button>
+        {activeLoans.length >= 2 && (
+          <button
+            onClick={() => navigate(`/clients/${id}/unify-loans`)}
+            className="col-span-2 bg-purple-600 rounded-2xl py-3 flex items-center justify-center gap-2 text-white text-sm font-medium active:scale-95 transition"
+          >
+            <CreditCard size={16} /> Unificar préstamos activos
+          </button>
+        )}
         <button
           onClick={() => enviarRecordatorio(client)}
           className="col-span-2 bg-green-500 rounded-2xl py-3 flex items-center justify-center gap-2 text-white text-sm font-medium active:scale-95 transition"

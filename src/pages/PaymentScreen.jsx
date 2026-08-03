@@ -77,7 +77,7 @@ export default function PaymentScreen() {
 
   const [capital, setCapital] = useState("");
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
-  const [method, setMethod] = useState("efectivo");
+  const [methodAmounts, setMethodAmounts] = useState({ efectivo: '', nequi: '', breb: '' })
   const [reference, setReference] = useState("");
   const [notes, setNotes] = useState("");
   const [periodsToSettle, setPeriodsToSettle] = useState(1)
@@ -112,14 +112,8 @@ export default function PaymentScreen() {
       </div>
     );
 
-  const totalCapitalPaid = payments.reduce(
-    (s, p) => s + (p.capital_paid || 0),
-    0,
-  );
-  const totalInterestPaid = payments.reduce(
-    (s, p) => s + (p.interest_paid || 0),
-    0,
-  );
+  const totalCapitalPaid = payments.reduce((s, p) => s + (p.capital_paid || 0), 0) + (loan.initial_capital_paid || 0);
+  const totalInterestPaid = payments.reduce((s, p) => s + (p.interest_paid || 0), 0) + (loan.initial_interest_paid || 0);
   const paymentsMade = payments.length;
   const remaining = loan.amount - totalCapitalPaid;
   const isVariable = loan.interest_type === "variable";
@@ -191,6 +185,18 @@ export default function PaymentScreen() {
         if (diff > 0) autoNote = `Faltaron ${formatCOP(diff)} de interés en este pago.`
         else if (diff < 0) autoNote = `Pagó ${formatCOP(Math.abs(diff))} de interés de más (quedó a favor).`
 
+        const activeMethods = Object.entries(methodAmounts)
+          .map(([m, v]) => [m, parseCOP(v) || 0])
+          .filter(([, v]) => v > 0)
+
+        const sumMethods = activeMethods.reduce((s, [, v]) => s + v, 0)
+        if (sumMethods !== total) {
+          alert('Los métodos de pago no suman el total del pago.')
+          return
+        }
+
+        const isSingle = activeMethods.length === 1
+
         rows.push({
           loan_id: loan.id,
           date,
@@ -199,7 +205,8 @@ export default function PaymentScreen() {
           capital_paid: capitalNum,
           late: mora.inMora,
           notes: [autoNote, notes || null].filter(Boolean).join(' ') || null,
-          payment_method: method,
+          payment_method: isSingle ? activeMethods[0][0] : null,
+          method_breakdown: isSingle ? null : Object.fromEntries(activeMethods),
           reference: reference || null,
         })
       }
@@ -465,24 +472,42 @@ export default function PaymentScreen() {
 
         {/* 3. Método de pago */}
         <div className="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm">
-          <p className="text-sm font-bold text-gray-800 dark:text-gray-100 mb-3">
+          <p className="text-sm font-bold text-gray-800 dark:text-gray-100 mb-1">
             3. Método de pago
           </p>
-          <div className="grid grid-cols-3 gap-2">
+          <p className="text-xs text-gray-400 mb-3">
+            Si el pago llegó dividido, escribe cuánto por cada método.
+          </p>
+          <div className="space-y-2">
             {METHODS.map((m) => (
-              <button
-                key={m.id}
-                onClick={() => setMethod(m.id)}
-                className={`flex flex-col items-center gap-1.5 py-3 px-2 rounded-xl border transition active:scale-95 ${method === m.id
-                  ? "border-blue-500 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400"
-                  : "border-gray-200 dark:border-gray-700 text-gray-400 dark:text-gray-500"
-                  }`}
-              >
-                {m.icon}
-                <span className="text-xs font-medium">{m.label}</span>
-              </button>
+              <div key={m.id} className="flex items-center gap-3">
+                <div className="w-9 h-9 flex items-center justify-center rounded-xl bg-gray-50 dark:bg-gray-700 text-gray-500 dark:text-gray-300 shrink-0">
+                  {m.icon}
+                </div>
+                <span className="text-sm text-gray-600 dark:text-gray-300 w-16 shrink-0">{m.label}</span>
+                <input
+                  className="flex-1 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2 text-gray-800 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                  placeholder="$ 0"
+                  inputMode="numeric"
+                  value={methodAmounts[m.id]}
+                  onChange={(e) => {
+                    const raw = parseCOP(e.target.value)
+                    setMethodAmounts({ ...methodAmounts, [m.id]: raw ? formatCOP(raw) : '' })
+                  }}
+                />
+              </div>
             ))}
           </div>
+          {(() => {
+            const sum = Object.values(methodAmounts).reduce((s, v) => s + (parseCOP(v) || 0), 0)
+            const diff = total - sum
+            if (sum === 0) return null
+            return (
+              <p className={`text-xs mt-2 text-right ${diff === 0 ? 'text-green-500' : 'text-red-500'}`}>
+                {diff === 0 ? 'Cuadra con el total ✓' : `Faltan ${formatCOP(Math.abs(diff))} por asignar`}
+              </p>
+            )
+          })()}
         </div>
 
         {/* 4. Referencia */}
@@ -550,10 +575,11 @@ export default function PaymentScreen() {
             </div>
             <div>
               <p className="text-[10px] text-gray-400">Método</p>
-              <p className="text-sm font-semibold text-gray-700 dark:text-gray-200 capitalize">
-                {method === "breb"
-                  ? "Bre-B"
-                  : method.charAt(0).toUpperCase() + method.slice(1)}
+              <p className="text-sm font-semibold text-gray-700 dark:text-gray-200">
+                {Object.entries(methodAmounts)
+                  .filter(([, v]) => parseCOP(v) > 0)
+                  .map(([m]) => (m === 'breb' ? 'Bre-B' : m.charAt(0).toUpperCase() + m.slice(1)))
+                  .join(' + ') || '—'}
               </p>
             </div>
             <div>
