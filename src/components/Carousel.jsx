@@ -23,7 +23,19 @@ export default function Carousel({ children }) {
         }
 
         track.addEventListener('scroll', handleScroll, { passive: true })
-        return () => track.removeEventListener('scroll', handleScroll)
+
+        // Fuerza un recálculo de layout apenas el navegador termine de
+        // asentar el tamaño real del contenedor (fix del bug de WebKit
+        // donde el carrusel no repinta hasta el primer scroll de la página).
+        const resizeObserver = new ResizeObserver(() => {
+            handleScroll()
+        })
+        resizeObserver.observe(track)
+
+        return () => {
+            track.removeEventListener('scroll', handleScroll)
+            resizeObserver.disconnect()
+        }
     }, [])
 
     function goTo(index) {
@@ -35,11 +47,11 @@ export default function Carousel({ children }) {
     if (slides.length === 0) return null
 
     return (
-        <div className="relative">
+        <div className="relative" style={{ transform: 'translateZ(0)' }}>
             <div
                 ref={trackRef}
                 className="flex overflow-x-auto snap-x snap-mandatory scroll-smooth -mx-4 px-0 no-scrollbar"
-                style={{ scrollbarWidth: 'none' }}
+                style={{ scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}
             >
                 {slides.map((slide, i) => (
                     <div key={i} className="snap-center shrink-0 w-full px-4 first:pl-4 last:pr-4">
