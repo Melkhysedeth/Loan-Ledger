@@ -11,6 +11,7 @@ import {
   CreditCard,
   Calendar,
   Plus,
+  Bell,
 } from "lucide-react";
 import useLongPress from "../hooks/useLongPress";
 import ContextMenu from "../components/ContextMenu";
@@ -76,10 +77,10 @@ export default function Loans() {
           .order("created_at", { ascending: false }),
         supabase.from("clients").select("*"),
         supabase.from("payments").select("*"),
-        supabase.from("capital_withdrawals").select("amount"),
+        supabase.from("capital_withdrawals").select("amount, is_transfer"),
       ]);
 
-    setTotalWithdrawn((withdrawals || []).reduce((s, w) => s + (w.amount || 0), 0));
+    setTotalWithdrawn((withdrawals || []).filter(w => !w.is_transfer).reduce((s, w) => s + (w.amount || 0), 0));
 
     const loansList = allLoans || [];
     const paymentsList = allPayments || [];
@@ -189,7 +190,7 @@ export default function Loans() {
   const totalPending = activeLoans.reduce((s, l) => {
     const paid = payments
       .filter((p) => p.loan_id === l.id)
-      .reduce((a, p) => a + (p.capital_paid || 0), 0);
+      .reduce((a, p) => a + (p.capital_paid || 0), 0) + (l.initial_capital_paid || 0);
     return s + (l.amount - paid);
   }, 0);
   const overdueCount = loans.filter((l) => l.status === "overdue").length;
@@ -206,86 +207,95 @@ export default function Loans() {
 
   return (
     <div className="pb-24">
-      {/* Header */}
-      <div className="px-4 pt-6 pb-3">
-        <div className="flex justify-between items-center mb-4">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-              <CreditCard size={22} className="text-blue-400" /> Préstamos
-            </h1>
-            <p className="text-xs text-gray-400 mt-0.5">
-              Gestiona y consulta todos tus préstamos
+      {/* Hero lila */}
+      <div className="sticky top-0 z-20 overflow-hidden pt-6 pb-10 px-4 bg-[#C9A8E8]">
+        <div className="absolute inset-0 pointer-events-none">
+          <svg className="absolute -top-12 -right-20 w-72 h-72 text-white/25" viewBox="0 0 200 200" fill="currentColor">
+            <path d="M45.3,-58.5C59.5,-49.8,72.1,-36.9,76.6,-21.5C81.1,-6.1,77.5,11.8,69.6,26.9C61.7,42,49.5,54.3,35.1,62.6C20.7,70.9,4.1,75.2,-12.7,74.2C-29.5,73.2,-46.5,66.9,-58.4,55.1C-70.3,43.3,-77.1,26,-78.7,8.1C-80.3,-9.8,-76.7,-28.3,-66.6,-42.1C-56.5,-55.9,-39.9,-65,-23.7,-72C-7.5,-79,8.3,-83.9,22.9,-79.9C37.5,-75.9,45.3,-58.5,45.3,-58.5Z" transform="translate(100 100)" />
+          </svg>
+          <svg className="absolute -bottom-24 -left-14 w-80 h-80 text-white/15" viewBox="0 0 200 200" fill="currentColor">
+            <path d="M42.8,-54.2C54.5,-45.6,62,-31.4,65.5,-16.2C69,-1,68.5,15.2,61.6,28.5C54.7,41.8,41.4,52.2,26.5,59.1C11.6,66,-4.9,69.4,-20.4,65.8C-35.9,62.2,-50.4,51.6,-59.4,37.6C-68.4,23.6,-71.9,6.2,-69.1,-10.1C-66.3,-26.4,-57.2,-41.6,-44.4,-50.4C-31.6,-59.2,-15.8,-61.6,0.3,-62C16.4,-62.4,31.1,-62.8,42.8,-54.2Z" transform="translate(100 100)" />
+          </svg>
+        </div>
+
+        <div className="relative z-10">
+          <div className="flex items-center justify-between">
+            <p className="text-xl font-black text-gray-900 tracking-tight">
+              Loan<span className="text-gray-900/60">_</span>Ledger
             </p>
+            <button className="relative p-2 bg-black/5 backdrop-blur-sm rounded-full">
+              <Bell size={20} className="text-gray-900" />
+            </button>
           </div>
+
+          <h1 className="text-2xl font-bold text-gray-900 mt-3">Préstamos</h1>
+          <p className="text-xs text-gray-800/70 mb-4">Gestiona y consulta todos tus préstamos</p>
+
+          {/* Métricas */}
+          <div className="flex justify-between">
+            <div>
+              <p className="text-xs text-gray-800/70">Activos</p>
+              <p className="text-xl font-bold text-gray-900">{activeLoans.length}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-800/70">En mora</p>
+              <p className="text-xl font-bold text-gray-900">{overdueCount}</p>
+            </div>
+            <div className="text-right">
+              <p className="text-xs text-gray-800/70">Total prestado</p>
+              <p className="text-xl font-bold text-gray-900">{formatCOP(totalLent)}</p>
+            </div>
+          </div>
+
+          {/* Onda decorativa */}
+          <svg className="w-full h-4 mt-3" viewBox="0 0 400 20" preserveAspectRatio="none">
+            <path d="M0,10 Q50,20 100,10 T200,10 T300,10 T400,10" fill="none" stroke="rgba(255, 255, 255, 0.87)" strokeWidth="2" />
+          </svg>
+
+          {/* Buscador */}
+          <div className="flex gap-2 mt-2">
+            <div className="relative flex-1">
+              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+              <input
+                className="w-full border-none bg-white/45 rounded-full pl-9 pr-3 py-2 text-gray-900 placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-900/30"
+                placeholder="Buscar cliente o cédula..."
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+            </div>
+          </div>
+
+          {/* Filtros */}
+          <div className="flex gap-2 overflow-x-auto pb-1 mt-3 -mx-1 px-1 scrollbar-hide">
+            {FILTERS.map((f) => {
+              const cfg = STATUS_CONFIG[f];
+              return (
+                <button
+                  key={f}
+                  onClick={() => setFilter(f)}
+                  className={`shrink-0 text-xs font-medium px-3 py-1.5 rounded-full border transition flex items-center gap-1.5
+                    ${filter === f
+                      ? "bg-gray-900 text-white border-gray-900"
+                      : "bg-white/45 text-gray-700 border-transparent"
+                    }`}
+                >
+                  <span className={`w-1.5 h-1.5 rounded-full ${filter === f ? "bg-white" : cfg.dot}`} />
+                  {cfg.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Botón Nuevo préstamo */}
           <button
             onClick={() => navigate("/new-loan")}
-            className="bg-blue-600 text-white text-sm font-semibold px-4 py-2 rounded-xl shadow active:scale-95 transition flex items-center gap-1"
+            className="w-full mt-3 mb-2 bg-gray-900 text-white font-semibold py-3 rounded-full flex items-center justify-center gap-2 active:scale-95 transition"
           >
-            <Plus size={14} /> Nuevo
+            <Plus size={18} /> Nuevo préstamo
           </button>
         </div>
 
-        {/* Buscador */}
-        <div className="flex items-center gap-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2 shadow-sm">
-          <Search size={16} className="text-gray-400 shrink-0" />
-          <input
-            className="flex-1 text-sm text-gray-700 dark:text-gray-200 bg-transparent focus:outline-none placeholder-gray-400"
-            placeholder="Buscar cliente o cédula..."
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-        </div>
-      </div>
-
-      {/* Métricas rápidas */}
-      <div className="mx-4 bg-white dark:bg-gray-800 rounded-2xl p-4 mb-4 shadow-sm">
-        <div className="grid grid-cols-4 gap-2 text-center">
-          <div>
-            <p className="text-[10px] text-gray-400 mb-1">Total prestado</p>
-            <p className="text-xs font-bold text-blue-500">
-              {formatCOP(totalLent)}
-            </p>
-          </div>
-          <div>
-            <p className="text-[10px] text-gray-400 mb-1">Saldo pendiente</p>
-            <p className="text-xs font-bold text-amber-500">
-              {formatCOP(totalPending)}
-            </p>
-          </div>
-          <div>
-            <p className="text-[10px] text-gray-400 mb-1">Activos</p>
-            <p className="text-xs font-bold text-green-500">
-              {activeLoans.length}
-            </p>
-          </div>
-          <div>
-            <p className="text-[10px] text-gray-400 mb-1">En mora</p>
-            <p className="text-xs font-bold text-red-500">{overdueCount}</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Filtros */}
-      <div className="flex gap-2 px-4 mb-4 overflow-x-auto pb-1 scrollbar-hide">
-        {FILTERS.map((f) => {
-          const cfg = STATUS_CONFIG[f];
-          return (
-            <button
-              key={f}
-              onClick={() => setFilter(f)}
-              className={`shrink-0 text-xs font-medium px-3 py-1.5 rounded-full border transition flex items-center gap-1.5
-                                ${filter === f
-                  ? "bg-blue-600 text-white border-blue-600"
-                  : "bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700"
-                }`}
-            >
-              <span
-                className={`w-1.5 h-1.5 rounded-full ${filter === f ? "bg-white" : cfg.dot}`}
-              />
-              {cfg.label}
-            </button>
-          );
-        })}
+        <div className="absolute bottom-0 left-0 right-0 h-8 bg-white dark:bg-gray-900 rounded-t-[1.8rem]" />
       </div>
 
       {/* Lista */}
@@ -395,7 +405,7 @@ function LoanCard({ loan, index, payments, onPress, onEdit, onDeleted, even }) {
       <button
         onClick={onPress}
         {...longPress}
-        className={`w-full ${even ? "bg-white dark:bg-gray-800" : "bg-gray-50 dark:bg-gray-800/60"} rounded-2xl shadow-md p-4 text-left active:scale-[0.98] transition`}
+        className={`w-full ${even ? "bg-zinc-50 dark:bg-gray-800" : "bg-slate-50 dark:bg-gray-800/60"} rounded-2xl shadow-md p-4 text-left active:scale-[0.98] transition`}
       >
         {/* Fila superior: código + estado */}
         <div className="flex justify-between items-center mb-1">

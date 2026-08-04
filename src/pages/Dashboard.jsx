@@ -257,7 +257,7 @@ export default function Dashboard() {
     return (
         <div className="pb-4">
             {/* Header con fondo de color */}
-            <div className="sticky top-0 z-20 relative overflow-hidden bg-[#83d4d2] dark:bg-[#3f8b89] pb-10">
+            <div className="sticky top-0 z-20 overflow-hidden bg-[#83d4d2] dark:bg-[#3f8b89] pb-10">
 
                 <div className="absolute inset-0 pointer-events-none">
                     <svg className="absolute -top-12 -right-20 w-72 h-72 text-white/15" viewBox="0 0 200 200" fill="currentColor">
