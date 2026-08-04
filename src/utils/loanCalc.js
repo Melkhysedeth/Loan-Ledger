@@ -183,31 +183,29 @@ export function calcInterestCarryover(loan, payments = []) {
     }
 
     const isVariable = loan.interest_type === 'variable'
-
-    // Ordenar pagos cronológicamente (el historial puede venir en cualquier orden,
-    // p.ej. LoanDetail los carga descendente para mostrarlos en UI)
     const sorted = [...payments].sort((a, b) => new Date(a.date) - new Date(b.date))
 
     let capitalPaidSoFar = loan.initial_capital_paid || 0
     let carryover = 0
 
     for (const p of sorted) {
-        // Interés que correspondía ANTES de aplicar este pago
+        // Los pagos anteriores a la fecha en que se activó la tasa actual
+        // ya quedaron saldados con la tasa vieja — no los usamos para calcular arrastre.
+        const beforeRateChange = loan.interest_effective_date && p.date < loan.interest_effective_date
+
         const baseInterest = isVariable
             ? calcInterest(loan.amount - capitalPaidSoFar, loan.interest_rate, loan.frequency)
             : (loan.interest_amount || 0)
 
-        const expected = baseInterest + carryover
-        const actuallyPaid = p.interest_paid || 0
-
-        // Diferencia: positiva si pagó menos de lo esperado (queda debiendo),
-        // negativa si pagó más (abona al arrastre o genera saldo a favor)
-        carryover = expected - actuallyPaid
+        if (!beforeRateChange) {
+            const expected = baseInterest + carryover
+            const actuallyPaid = p.interest_paid || 0
+            carryover = expected - actuallyPaid
+        }
 
         capitalPaidSoFar += (p.capital_paid || 0)
     }
 
-    // Interés esperado para el PRÓXIMO pago = base del periodo actual + lo que arrastra
     const nextBaseInterest = isVariable
         ? calcInterest(loan.amount - capitalPaidSoFar, loan.interest_rate, loan.frequency)
         : (loan.interest_amount || 0)

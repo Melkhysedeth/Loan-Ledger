@@ -12,6 +12,39 @@ const initialLoan = {
     interestType: 'fixed', numPayments: ''
 }
 
+const METHODS = [
+    {
+        id: 'efectivo',
+        label: 'Efectivo',
+        icon: (
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <rect x="2" y="6" width="20" height="12" rx="2" />
+                <circle cx="12" cy="12" r="3" />
+                <path d="M6 12h.01M18 12h.01" />
+            </svg>
+        ),
+    },
+    {
+        id: 'nequi',
+        label: 'Nequi',
+        icon: (
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z" />
+                <path d="M8 12l3 3 5-5" />
+            </svg>
+        ),
+    },
+    {
+        id: 'breb',
+        label: 'Bre-B',
+        icon: (
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4" />
+            </svg>
+        ),
+    },
+]
+
 // Estado del cliente seleccionado también se persiste por separado
 // porque es un objeto, no un campo de texto
 const SELECTED_CLIENT_KEY = 'new-loan-client'
@@ -29,7 +62,7 @@ export default function NewLoan() {
     const [selectedClient, setSelectedClient] = useState(null)
     const [loan, setLoan] = useState(initialLoan)
     const [saving, setSaving] = useState(false)
-    const [method, setMethod] = useState('efectivo')
+    const [methodAmounts, setMethodAmounts] = useState({ efectivo: '', nequi: '', breb: '' })
 
     const amount = parseCOP(loan.amount)
     const rate = parseFloat(loan.rate) || 0
@@ -68,7 +101,17 @@ export default function NewLoan() {
             numPayments: editLoan.num_payments?.toString() || '',
         })
 
-        setMethod(editLoan.payment_method || 'efectivo')
+        supabase.from('loan_disbursements').select('*').eq('loan_id', editLoan.id)
+            .then(({ data }) => {
+                if (data && data.length > 0) {
+                    const amounts = { efectivo: '', nequi: '', breb: '' }
+                    data.forEach(d => { amounts[d.payment_method] = formatCOP(d.amount) })
+                    setMethodAmounts(amounts)
+                } else if (editLoan.payment_method) {
+                    // préstamos viejos que solo tenían el campo simple
+                    setMethodAmounts({ efectivo: '', nequi: '', breb: '', [editLoan.payment_method]: formatCOP(editLoan.amount) })
+                }
+            })
 
         // El préstamo trae client_id, pero no el objeto cliente completo —
         // lo traemos para poder mostrarlo en la sección "Cliente"
@@ -142,8 +185,19 @@ export default function NewLoan() {
             alert('Completa los campos obligatorios del préstamo.')
             return
         }
+
+        const activeMethods = Object.entries(methodAmounts)
+            .map(([m, v]) => [m, parseCOP(v) || 0])
+            .filter(([, v]) => v > 0)
+        const sumMethods = activeMethods.reduce((s, [, v]) => s + v, 0)
+        if (sumMethods !== amount) {
+            alert('Los métodos de desembolso no suman el monto del préstamo.')
+            return
+        }
+
         setSaving(true)
         try {
+            const isSingle = activeMethods.length === 1
             const payload = {
                 client_id: selectedClient.id,
                 interest_type: loan.interestType,
@@ -154,14 +208,22 @@ export default function NewLoan() {
                 start_date: loan.startDate,
                 first_payment_date: loan.firstPaymentDate || null,
                 notes: loan.notes,
-                payment_method: method,
+                payment_method: isSingle ? activeMethods[0][0] : null,
             }
 
+            let loanId = editLoan?.id
             if (isEditing) {
                 await supabase.from('loans').update(payload).eq('id', editLoan.id)
+                await supabase.from('loan_disbursements').delete().eq('loan_id', editLoan.id)
             } else {
-                await supabase.from('loans').insert({ ...payload, status: 'active' })
+                const { data } = await supabase.from('loans').insert({ ...payload, status: 'active' }).select().single()
+                loanId = data.id
             }
+
+            const disbursementRows = activeMethods.map(([m, amt]) => ({
+                loan_id: loanId, payment_method: m, amount: amt,
+            }))
+            await supabase.from('loan_disbursements').insert(disbursementRows)
 
             clearAll()
             navigate('/loans')
@@ -266,21 +328,41 @@ export default function NewLoan() {
                                 </div>
                             </div>
                             <div>
-                                <label className="text-sm text-gray-500 dark:text-gray-400 mb-1 block">Método de desembolso</label>
-                                <div className="grid grid-cols-3 gap-2">
-                                    {['efectivo', 'nequi', 'breb'].map(m => (
-                                        <button
-                                            key={m}
-                                            type="button"
-                                            onClick={() => setMethod(m)}
-                                            className={`py-2 rounded-xl text-sm font-medium border transition ${method === m
-                                                ? 'bg-blue-600 text-white border-blue-600'
-                                                : 'bg-white dark:bg-gray-900 text-gray-500 border-gray-200 dark:border-gray-700'
-                                                }`}
-                                        >
-                                            {m === 'breb' ? 'Bre-B' : m.charAt(0).toUpperCase() + m.slice(1)}
-                                        </button>
-                                    ))}
+                                <div>
+                                    <label className="text-sm text-gray-500 dark:text-gray-400 mb-1 block">Método de desembolso</label>
+                                    <p className="text-xs text-gray-400 mb-2">Si el préstamo salió de varios métodos, escribe cuánto por cada uno.</p>
+                                    <div className="space-y-2">
+                                        {METHODS.map(m => (
+                                            <div key={m.id} className="flex items-center gap-3">
+                                                <div className="w-9 h-9 flex items-center justify-center rounded-xl bg-gray-50 dark:bg-gray-700 text-gray-500 dark:text-gray-300 shrink-0">
+                                                    {m.icon}
+                                                </div>
+                                                <span className="text-sm text-gray-600 dark:text-gray-300 w-16 shrink-0">
+                                                    {m.label}
+                                                </span>
+                                                <input
+                                                    className="flex-1 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 rounded-xl px-3 py-2 text-gray-800 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                                                    placeholder="$ 0"
+                                                    inputMode="numeric"
+                                                    value={methodAmounts[m.id]}
+                                                    onChange={(e) => {
+                                                        const raw = parseCOP(e.target.value)
+                                                        setMethodAmounts({ ...methodAmounts, [m.id]: raw ? formatCOP(raw) : '' })
+                                                    }}
+                                                />
+                                            </div>
+                                        ))}
+                                    </div>
+                                    {(() => {
+                                        const sum = Object.values(methodAmounts).reduce((s, v) => s + (parseCOP(v) || 0), 0)
+                                        const diff = amount - sum
+                                        if (sum === 0) return null
+                                        return (
+                                            <p className={`text-xs mt-2 text-right ${diff === 0 ? 'text-green-500' : 'text-red-500'}`}>
+                                                {diff === 0 ? 'Cuadra con el monto ✓' : `Faltan ${formatCOP(Math.abs(diff))} por asignar`}
+                                            </p>
+                                        )
+                                    })()}
                                 </div>
                             </div>
                             <div>

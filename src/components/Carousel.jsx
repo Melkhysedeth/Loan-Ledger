@@ -49,17 +49,16 @@ export default function Carousel({ children }) {
             </div>
 
             {slides.length > 1 && (
-                <div className="flex justify-center gap-1.5 mt-3">
+                <div className="flex justify-center gap-1.5 mt-4 pb-1">
                     {slides.map((_, i) => (
                         <button
                             key={i}
                             onClick={() => goTo(i)}
                             aria-label={`Ir al slide ${i + 1}`}
-                            className={`h-1.5 rounded-full transition-all ${
-                                i === activeIndex
-                                    ? 'w-6 bg-blue-500'
-                                    : 'w-1.5 bg-gray-300 dark:bg-gray-600'
-                            }`}
+                            className={`h-1.5 rounded-full transition-all ${i === activeIndex
+                                ? 'w-6 bg-gray-900 dark:bg-white'
+                                : 'w-1.5 bg-gray-400/50 dark:bg-gray-600'
+                                }`}
                         />
                     ))}
                 </div>

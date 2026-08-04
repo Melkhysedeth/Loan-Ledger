@@ -2,7 +2,11 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../db/supabase'
 import { formatCOP } from '../utils/format'
-import { ChevronLeft, TrendingUp, AlertCircle, Percent, BarChart2, Banknote, ChevronRight, X } from 'lucide-react'
+import {
+    ChevronLeft, TrendingUp, AlertCircle, AlertTriangle, Percent, BarChart2,
+    BarChart3, Banknote, ChevronRight, ChevronDown, X, DollarSign, Clock,
+    Users, UserRound, Calendar
+} from 'lucide-react'
 
 export default function Reports() {
     const navigate = useNavigate()
@@ -17,20 +21,18 @@ export default function Reports() {
             supabase.from('loans').select('id, amount, interest_rate, status, created_at'),
             supabase.from('payments').select('total_paid, interest_paid, created_at'),
             supabase.from('clients').select('id'),
-            supabase.from('capital_withdrawals').select('amount, date, notes').order('date', { ascending: false }),
+            supabase.from('capital_withdrawals').select('amount, date, notes, is_transfer').order('date', { ascending: false }),
         ])
 
         const activeLoans = (loans || []).filter(l => ['active', 'frozen', 'agreement'].includes(l.status))
         const overdueLoans = (loans || []).filter(l => l.status === 'overdue')
         const allPayments = payments || []
-        const allWithdrawals = withdrawals || []
+        const allWithdrawals = (withdrawals || []).filter(w => !w.is_transfer)
 
         const capitalRetirado = allWithdrawals.reduce((s, w) => s + (w.amount || 0), 0)
         const retirosCount = allWithdrawals.length
         const lastWithdrawal = allWithdrawals[0] || null
 
-        // FIX: el capital en mora sigue siendo capital activo (es deuda viva que debe recuperarse),
-        // así que se suma al capital activo en vez de mostrarse como una categoría aparte y excluida.
         const capitalActivo = [...activeLoans, ...overdueLoans].reduce((s, l) => s + (l.amount || 0), 0) - capitalRetirado
         const capitalEnMora = overdueLoans.reduce((s, l) => s + (l.amount || 0), 0)
         const gananciaTotal = allPayments.reduce((s, p) => s + (p.interest_paid || 0), 0)
@@ -63,7 +65,7 @@ export default function Reports() {
             .sort((a, b) => a.rate - b.rate)
 
         const proyeccion = rateGroups.reduce((s, g) => s + g.monthlyIncome, 0)
-        const totalCapital = capitalActivo // ya incluye capitalEnMora, no se debe sumar de nuevo
+        const totalCapital = capitalActivo
         const margen = totalCapital > 0 ? ((pagosEsteMes / totalCapital) * 100) : 0
 
         setStats({
@@ -89,54 +91,123 @@ export default function Reports() {
         <div className="pb-10 min-h-screen bg-gray-50 dark:bg-gray-950">
 
             {/* Header */}
-            <div className="px-4 pt-6 pb-4 flex items-center gap-3">
-                <button
-                    onClick={() => navigate(-1)}
-                    className="w-9 h-9 flex items-center justify-center rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 active:scale-95 transition"
-                >
-                    <ChevronLeft size={20} />
-                </button>
-                <div>
-                    <p className="text-xs text-gray-400 font-medium">Análisis</p>
-                    <h1 className="text-xl font-bold text-gray-900 dark:text-white leading-tight">Reportes</h1>
+            <div className="px-4 pt-6 pb-4 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                    <button
+                        onClick={() => navigate(-1)}
+                        className="w-9 h-9 flex items-center justify-center rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 active:scale-95 transition"
+                    >
+                        <ChevronLeft size={20} />
+                    </button>
+                    <div>
+                        <p className="text-xs text-teal-600 dark:text-teal-400 font-semibold">Análisis</p>
+                        <h1 className="text-xl font-bold text-gray-900 dark:text-white leading-tight">Reportes</h1>
+                    </div>
                 </div>
+
+                <button className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-sm font-semibold text-gray-700 dark:text-gray-200 active:scale-95 transition shrink-0">
+                    <Calendar size={15} className="text-gray-400" />
+                    Este mes
+                    <ChevronDown size={14} className="text-gray-400" />
+                </button>
             </div>
 
             {/* Hero: Ganancia total */}
-            <div className="mx-4 mb-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-5">
-                <p className="text-sm text-gray-400 mb-1">Ganancia neta acumulada (intereses)</p>
-                <p className="text-4xl font-bold text-green-600 dark:text-green-400 tracking-tight">
-                    {formatCOP(stats.gananciaTotal)}
-                </p>
-                <div className="flex items-center gap-1.5 mt-2">
-                    <TrendingUp size={14} className="text-green-500" />
-                    <p className="text-sm text-gray-400">
-                        <span className="text-green-600 dark:text-green-400 font-medium">{formatCOP(stats.pagosEsteMes)}</span>
-                        {' '}en intereses este mes
-                    </p>
+            <div className="mx-4 mb-4 rounded-2xl p-5 relative overflow-hidden"
+                style={{ background: 'linear-gradient(135deg, #0d9488 0%, #0891b2 100%)' }}>
+
+                <div className="absolute inset-0 pointer-events-none opacity-15">
+                    <svg className="absolute -bottom-14 -right-10 w-56 h-56 text-white" viewBox="0 0 200 200" fill="currentColor">
+                        <path d="M42.8,-54.2C54.5,-45.6,62,-31.4,65.5,-16.2C69,-1,68.5,15.2,61.6,28.5C54.7,41.8,41.4,52.2,26.5,59.1C11.6,66,-4.9,69.4,-20.4,65.8C-35.9,62.2,-50.4,51.6,-59.4,37.6C-68.4,23.6,-71.9,6.2,-69.1,-10.1C-66.3,-26.4,-57.2,-41.6,-44.4,-50.4C-31.6,-59.2,-15.8,-61.6,0.3,-62C16.4,-62.4,31.1,-62.8,42.8,-54.2Z" transform="translate(100 100)" />
+                    </svg>
+                </div>
+
+                <div className="relative z-10 flex items-start gap-3">
+                    <div className="w-14 h-14 rounded-2xl bg-white/20 flex items-center justify-center shrink-0">
+                        <TrendingUp size={26} color="white" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                        <p className="text-sm text-white/80 mb-1">Ganancia neta acumulada (intereses)</p>
+                        <p className="text-3xl font-black text-white tracking-tight truncate">
+                            {formatCOP(stats.gananciaTotal)}
+                        </p>
+                        <div className="flex items-center gap-1.5 mt-2 bg-white/15 rounded-full px-2.5 py-1 w-fit">
+                            <TrendingUp size={12} className="text-white" />
+                            <p className="text-xs text-white">
+                                {formatCOP(stats.pagosEsteMes)} en intereses este mes
+                            </p>
+                        </div>
+                    </div>
                 </div>
             </div>
 
             {/* Métricas en lista */}
             <div className="mx-4 mb-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl overflow-hidden">
-                <MetricRow label="Capital activo (prestado)" value={formatCOP(stats.capitalActivo)} valueClass="text-gray-900 dark:text-white" />
+                <MetricRow
+                    label="Capital activo (prestado)"
+                    value={formatCOP(stats.capitalActivo)}
+                    valueClass="text-gray-900 dark:text-white"
+                    Icon={DollarSign}
+                    iconBg="bg-green-50 dark:bg-green-900/30"
+                    iconColor="text-green-600 dark:text-green-400"
+                />
                 <MetricRow
                     label="Capital en mora"
                     value={formatCOP(stats.capitalEnMora)}
                     valueClass={stats.capitalEnMora > 0 ? 'text-red-500' : 'text-gray-400 dark:text-gray-500'}
-                    Icon={stats.capitalEnMora > 0 ? AlertCircle : null}
+                    Icon={Clock}
+                    iconBg="bg-red-50 dark:bg-red-900/30"
+                    iconColor="text-red-500"
                 />
-                <MetricRow label="Préstamos activos" value={stats.activeCount} valueClass="text-gray-900 dark:text-white" />
+                <MetricRow
+                    label="Préstamos activos"
+                    value={stats.activeCount}
+                    valueClass="text-gray-900 dark:text-white"
+                    Icon={Users}
+                    iconBg="bg-blue-50 dark:bg-blue-900/30"
+                    iconColor="text-blue-600 dark:text-blue-400"
+                />
                 <MetricRow
                     label="Clientes en mora"
                     value={stats.overdueCount}
                     valueClass={stats.overdueCount > 0 ? 'text-red-500' : 'text-gray-400 dark:text-gray-500'}
-                    Icon={stats.overdueCount > 0 ? AlertCircle : null}
+                    Icon={AlertTriangle}
+                    iconBg="bg-amber-50 dark:bg-amber-900/30"
+                    iconColor="text-amber-500"
                 />
-                <MetricRow label="Total clientes" value={stats.clientCount} valueClass="text-gray-900 dark:text-white" />
-                <MetricRow label="Tasa promedio cobrada" value={`${stats.tasaPromedio.toFixed(1)}%`} valueClass="text-gray-900 dark:text-white" Icon={Percent} />
-                <MetricRow label="Margen mensual estimado" value={`${stats.margen.toFixed(1)}%`} valueClass="text-green-600 dark:text-green-400" />
-                <MetricRow label="Proyección próximo mes" value={formatCOP(stats.proyeccion)} valueClass="text-green-600 dark:text-green-400" last />
+                <MetricRow
+                    label="Total clientes"
+                    value={stats.clientCount}
+                    valueClass="text-gray-900 dark:text-white"
+                    Icon={UserRound}
+                    iconBg="bg-purple-50 dark:bg-purple-900/30"
+                    iconColor="text-purple-500"
+                />
+                <MetricRow
+                    label="Tasa promedio cobrada"
+                    value={`${stats.tasaPromedio.toFixed(1)}%`}
+                    valueClass="text-gray-900 dark:text-white"
+                    Icon={Percent}
+                    iconBg="bg-blue-50 dark:bg-blue-900/30"
+                    iconColor="text-blue-500"
+                />
+                <MetricRow
+                    label="Margen mensual estimado"
+                    value={`${stats.margen.toFixed(1)}%`}
+                    valueClass="text-green-600 dark:text-green-400"
+                    Icon={BarChart3}
+                    iconBg="bg-green-50 dark:bg-green-900/30"
+                    iconColor="text-green-600 dark:text-green-400"
+                />
+                <MetricRow
+                    label="Proyección próximo mes"
+                    value={formatCOP(stats.proyeccion)}
+                    valueClass="text-green-600 dark:text-green-400"
+                    Icon={TrendingUp}
+                    iconBg="bg-green-50 dark:bg-green-900/30"
+                    iconColor="text-green-600 dark:text-green-400"
+                    last
+                />
             </div>
 
             {/* Capital retirado del negocio */}
@@ -146,8 +217,8 @@ export default function Reports() {
                         onClick={() => setShowWithdrawHistory(true)}
                         className="w-full p-4 flex items-center gap-3 text-left active:bg-gray-50 dark:active:bg-gray-700/40 transition"
                     >
-                        <div className="w-10 h-10 rounded-full bg-red-50 dark:bg-red-900/30 flex items-center justify-center shrink-0">
-                            <Banknote size={18} className="text-red-500" />
+                        <div className="w-11 h-11 rounded-2xl bg-red-50 dark:bg-red-900/30 flex items-center justify-center shrink-0">
+                            <Banknote size={19} className="text-red-500" />
                         </div>
                         <div className="flex-1 min-w-0">
                             <p className="text-sm text-gray-400">Capital retirado del negocio</p>
@@ -211,14 +282,14 @@ export default function Reports() {
     )
 }
 
-function MetricRow({ label, value, valueClass, Icon, last }) {
+function MetricRow({ label, value, valueClass, Icon, iconBg, iconColor, last }) {
     return (
-        <div className={`flex items-center justify-between px-4 py-3.5 ${!last ? 'border-b border-gray-100 dark:border-gray-700' : ''}`}>
-            <p className="text-sm text-gray-400">{label}</p>
-            <div className="flex items-center gap-1.5">
-                {Icon && <Icon size={13} className={valueClass} />}
-                <p className={`text-sm font-semibold ${valueClass}`}>{value}</p>
+        <div className={`flex items-center gap-3 px-4 py-3.5 ${!last ? 'border-b border-gray-100 dark:border-gray-700' : ''}`}>
+            <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${iconBg}`}>
+                <Icon size={16} className={iconColor} />
             </div>
+            <p className="text-sm text-gray-500 dark:text-gray-400 flex-1">{label}</p>
+            <p className={`text-sm font-semibold ${valueClass}`}>{value}</p>
         </div>
     )
 }

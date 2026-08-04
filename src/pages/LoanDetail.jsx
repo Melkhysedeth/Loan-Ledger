@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "../db/supabase";
+import { METHODS } from '../constants/paymentMethods'
+import PaymentDetailModal from "../components/PaymentDetailModal";
 import { formatCOP } from "../utils/format";
 import {
   calcVariableInterest,
@@ -34,6 +36,7 @@ export default function LoanDetail() {
   const [payments, setPayments] = useState([]);
   const [modal, setModal] = useState(null);
   const [voidTarget, setVoidTarget] = useState(null)
+  const [selectedPayment, setSelectedPayment] = useState(null)
 
   useEffect(() => {
     load();
@@ -533,7 +536,11 @@ export default function LoanDetail() {
           </p>
         ) : (
           payments.map((p, i) => (
-            <div key={p.id} className={`flex items-center gap-3 px-4 py-3 ${i < payments.length - 1 ? 'border-b border-gray-100 dark:border-gray-700' : ''} ${p.voided ? 'opacity-50' : ''}`}>
+            <div
+              key={p.id}
+              onClick={() => setSelectedPayment(p)}
+              className={`flex items-center gap-3 px-4 py-3 cursor-pointer active:bg-gray-50 dark:active:bg-gray-700/40 transition ${i < payments.length - 1 ? 'border-b border-gray-100 dark:border-gray-700' : ''} ${p.voided ? 'opacity-50' : ''}`}
+            >
               <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${p.voided ? 'bg-gray-200 dark:bg-gray-700' : 'bg-green-100 dark:bg-green-900/30'}`}>
                 {p.voided ? <Ban size={14} className="text-gray-400" /> : <CheckCircle size={14} className="text-green-500" />}
               </div>
@@ -567,7 +574,7 @@ export default function LoanDetail() {
                 </span>
               ) : (
                 <button
-                  onClick={() => setVoidTarget(p)}
+                  onClick={(e) => { e.stopPropagation(); setVoidTarget(p) }}
                   className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-red-50 dark:bg-red-900/20 text-red-500 dark:text-red-400 active:scale-95 transition"
                 >
                   Anular
@@ -696,6 +703,13 @@ export default function LoanDetail() {
           }}
         />
       )}
+
+      {selectedPayment && (
+        <PaymentDetailModal
+          payment={selectedPayment}
+          onClose={() => setSelectedPayment(null)}
+        />
+      )}
     </div>
   );
 }
@@ -778,11 +792,13 @@ function InterestModal({ loan, remaining, onClose, onDone }) {
   async function handleSave() {
     if (!parsedRate) return;
     setSaving(true);
+    const today = new Date().toISOString().split("T")[0];
     await supabase
       .from("loans")
       .update({
         interest_rate: parsedRate,
         interest_amount: isVariable ? 0 : previewInterest,
+        interest_effective_date: today,
       })
       .eq("id", loan.id);
     onDone();
@@ -874,6 +890,7 @@ function FreezeModal({ loan, remaining, onClose, onDone }) {
   async function handleUnfreeze() {
     if (!firstPaymentDate || !parsedRate) return;
     setSaving(true);
+    const today = new Date().toISOString().split("T")[0];
     await supabase
       .from("loans")
       .update({
@@ -881,9 +898,9 @@ function FreezeModal({ loan, remaining, onClose, onDone }) {
         first_payment_date: firstPaymentDate,
         interest_rate: parsedRate,
         interest_type: interestType,
-        // FIX: si es variable guardamos 0 porque se calcula dinámicamente sobre el saldo
         interest_amount: interestType === "variable" ? 0 : previewInterest,
         frequency,
+        interest_effective_date: today,
       })
       .eq("id", loan.id);
     onDone();
@@ -1027,16 +1044,30 @@ function SettleModal({
   const [interestInput, setInterestInput] = useState(
     String(nextExpectedInterest),
   );
+  const [methodAmounts, setMethodAmounts] = useState({ efectivo: '', nequi: '', breb: '' });
 
   const capitalToPay = parseFloat(capitalInput) || 0;
   const interestToPay = parseFloat(interestInput) || 0;
   const total = capitalToPay + interestToPay;
 
+  const sumMethods = Object.values(methodAmounts).reduce((s, v) => s + (parseFloat(v) || 0), 0);
+  const methodsMatch = sumMethods === total;
+
   async function handleSave() {
+    if (total > 0 && !methodsMatch) {
+      alert('Los métodos de pago no suman el total a liquidar.');
+      return;
+    }
+
     setSaving(true);
     const today = new Date().toISOString().split("T")[0];
 
     if (total > 0) {
+      const activeMethods = Object.entries(methodAmounts)
+        .map(([m, v]) => [m, parseFloat(v) || 0])
+        .filter(([, v]) => v > 0);
+      const isSingle = activeMethods.length === 1;
+
       await supabase.from("payments").insert({
         loan_id: loan.id,
         date: today,
@@ -1045,7 +1076,8 @@ function SettleModal({
         capital_paid: capitalToPay,
         late: false,
         notes: "Liquidación del préstamo",
-        payment_method: "efectivo",
+        payment_method: isSingle ? activeMethods[0][0] : null,
+        method_breakdown: isSingle ? null : Object.fromEntries(activeMethods),
       });
     }
 
@@ -1102,6 +1134,32 @@ function SettleModal({
           />
         </div>
 
+        <div>
+          <label className="text-sm text-gray-400 mb-1 block">¿Por qué método(s) se recibe?</label>
+          <div className="space-y-2">
+            {METHODS.map(m => (
+              <div key={m.id} className="flex items-center gap-3">
+                <div className="w-9 h-9 flex items-center justify-center rounded-xl bg-gray-800 text-gray-400 shrink-0">
+                  {m.icon}
+                </div>
+                <span className="text-sm text-gray-300 w-16 shrink-0">{m.label}</span>
+                <input
+                  type="number"
+                  className="flex-1 bg-gray-800 border border-gray-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
+                  placeholder="0"
+                  value={methodAmounts[m.id]}
+                  onChange={(e) => setMethodAmounts({ ...methodAmounts, [m.id]: e.target.value })}
+                />
+              </div>
+            ))}
+          </div>
+          {sumMethods > 0 && (
+            <p className={`text-xs mt-2 text-right ${methodsMatch ? 'text-green-400' : 'text-red-400'}`}>
+              {methodsMatch ? 'Cuadra con el total ✓' : `Diferencia: ${formatCOP(Math.abs(total - sumMethods))}`}
+            </p>
+          )}
+        </div>
+
         <div className="bg-green-900/20 border border-green-700/30 rounded-xl p-3 text-xs text-green-300">
           <p>
             Total a recibir:{" "}
@@ -1129,7 +1187,7 @@ function SettleModal({
 
         <button
           onClick={handleSave}
-          disabled={saving}
+          disabled={saving || (total > 0 && !methodsMatch)}
           className="w-full bg-green-600 text-white font-semibold py-3 rounded-2xl active:scale-95 transition disabled:opacity-50"
         >
           {saving ? "Guardando..." : `Confirmar · ${formatCOP(total)}`}
