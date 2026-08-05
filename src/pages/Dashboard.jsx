@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext'
 import { formatCOP, parseCOP } from '../utils/format'
 import { METHODS, getMethodLabel, getMethodIcon } from '../constants/paymentMethods'
 import { calcNextPaymentDate, classifyLoan } from '../utils/loanCalc'
+import { forceTileRepaint } from '../hooks/useForceRepaint'
 import PaymentDetailModal from '../components/PaymentDetailModal'
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 import {
@@ -238,6 +239,7 @@ export default function Dashboard() {
             attention, statusDistribution, recentPayments,
             agreementCount, frozenCount, paidCount,
         })
+        forceTileRepaint()
     }
 
     useEffect(() => { load() }, [])
@@ -363,7 +365,7 @@ export default function Dashboard() {
                 <div className="absolute bottom-0 left-0 right-0 h-8 bg-white dark:bg-gray-900 rounded-t-[1.8rem]" />
             </div>
 
-            <div className="px-0 pt-3 space-y-5">
+            <div className="px-4 pt-3 space-y-5">
 
                 {/* Resumen rápido: préstamos activos, en mora, próximos a vencer */}
                 <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm px-4 pt-3 pb-3">
