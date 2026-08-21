@@ -163,6 +163,20 @@ export default function PaymentScreen() {
       const rows = []
       if (periodsToSettle > 1) {
         const interestPerPeriod = Math.round(interest / periodsToSettle)
+
+        // 👇 Igual que en el otro bloque: calculamos los métodos activos
+        const activeMethods = Object.entries(methodAmounts)
+          .map(([m, v]) => [m, parseCOP(v) || 0])
+          .filter(([, v]) => v > 0)
+
+        const sumMethods = activeMethods.reduce((s, [, v]) => s + v, 0)
+        if (sumMethods !== total) {
+          alert('Los métodos de pago no suman el total del pago.')
+          return
+        }
+
+        const isSingle = activeMethods.length === 1
+
         for (let i = 0; i < periodsToSettle; i++) {
           const isLast = i === periodsToSettle - 1
           rows.push({
@@ -175,7 +189,8 @@ export default function PaymentScreen() {
             notes: isLast
               ? [`Liquidación de ${periodsToSettle} períodos de interés en mora.`, notes || null].filter(Boolean).join(' ')
               : 'Período de interés en mora (liquidado junto con otros).',
-            payment_method: method,
+            payment_method: isSingle ? activeMethods[0][0] : null,
+            method_breakdown: isSingle ? null : Object.fromEntries(activeMethods),
             reference: reference || null,
           })
         }

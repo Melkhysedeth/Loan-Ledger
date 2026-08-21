@@ -186,13 +186,16 @@ export default function NewLoan() {
             return
         }
 
-        const activeMethods = Object.entries(methodAmounts)
-            .map(([m, v]) => [m, parseCOP(v) || 0])
-            .filter(([, v]) => v > 0)
-        const sumMethods = activeMethods.reduce((s, [, v]) => s + v, 0)
-        if (sumMethods !== amount) {
-            alert('Los métodos de desembolso no suman el monto del préstamo.')
-            return
+        let activeMethods = []
+        if (!isEditing) {
+            activeMethods = Object.entries(methodAmounts)
+                .map(([m, v]) => [m, parseCOP(v) || 0])
+                .filter(([, v]) => v > 0)
+            const sumMethods = activeMethods.reduce((s, [, v]) => s + v, 0)
+            if (sumMethods !== amount) {
+                alert('Los métodos de desembolso no suman el monto del préstamo.')
+                return
+            }
         }
 
         setSaving(true)
@@ -208,22 +211,21 @@ export default function NewLoan() {
                 start_date: loan.startDate,
                 first_payment_date: loan.firstPaymentDate || null,
                 notes: loan.notes,
-                payment_method: isSingle ? activeMethods[0][0] : null,
+                ...(!isEditing && { payment_method: isSingle ? activeMethods[0][0] : null }),
             }
 
             let loanId = editLoan?.id
             if (isEditing) {
                 await supabase.from('loans').update(payload).eq('id', editLoan.id)
-                await supabase.from('loan_disbursements').delete().eq('loan_id', editLoan.id)
+                // No se toca loan_disbursements: el desembolso ya ocurrió y no se vuelve a pedir.
             } else {
                 const { data } = await supabase.from('loans').insert({ ...payload, status: 'active' }).select().single()
                 loanId = data.id
+                const disbursementRows = activeMethods.map(([m, amt]) => ({
+                    loan_id: loanId, payment_method: m, amount: amt,
+                }))
+                await supabase.from('loan_disbursements').insert(disbursementRows)
             }
-
-            const disbursementRows = activeMethods.map(([m, amt]) => ({
-                loan_id: loanId, payment_method: m, amount: amt,
-            }))
-            await supabase.from('loan_disbursements').insert(disbursementRows)
 
             clearAll()
             navigate('/loans')
@@ -328,42 +330,44 @@ export default function NewLoan() {
                                 </div>
                             </div>
                             <div>
-                                <div>
-                                    <label className="text-sm text-gray-500 dark:text-gray-400 mb-1 block">Método de desembolso</label>
-                                    <p className="text-xs text-gray-400 mb-2">Si el préstamo salió de varios métodos, escribe cuánto por cada uno.</p>
-                                    <div className="space-y-2">
-                                        {METHODS.map(m => (
-                                            <div key={m.id} className="flex items-center gap-3">
-                                                <div className="w-9 h-9 flex items-center justify-center rounded-xl bg-gray-50 dark:bg-gray-700 text-gray-500 dark:text-gray-300 shrink-0">
-                                                    {m.icon}
+                                {!isEditing && (
+                                    <div>
+                                        <label className="text-sm text-gray-500 dark:text-gray-400 mb-1 block">Método de desembolso</label>
+                                        <p className="text-xs text-gray-400 mb-2">Si el préstamo salió de varios métodos, escribe cuánto por cada uno.</p>
+                                        <div className="space-y-2">
+                                            {METHODS.map(m => (
+                                                <div key={m.id} className="flex items-center gap-3">
+                                                    <div className="w-9 h-9 flex items-center justify-center rounded-xl bg-gray-50 dark:bg-gray-700 text-gray-500 dark:text-gray-300 shrink-0">
+                                                        {m.icon}
+                                                    </div>
+                                                    <span className="text-sm text-gray-600 dark:text-gray-300 w-16 shrink-0">
+                                                        {m.label}
+                                                    </span>
+                                                    <input
+                                                        className="flex-1 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 rounded-xl px-3 py-2 text-gray-800 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                                                        placeholder="$ 0"
+                                                        inputMode="numeric"
+                                                        value={methodAmounts[m.id]}
+                                                        onChange={(e) => {
+                                                            const raw = parseCOP(e.target.value)
+                                                            setMethodAmounts({ ...methodAmounts, [m.id]: raw ? formatCOP(raw) : '' })
+                                                        }}
+                                                    />
                                                 </div>
-                                                <span className="text-sm text-gray-600 dark:text-gray-300 w-16 shrink-0">
-                                                    {m.label}
-                                                </span>
-                                                <input
-                                                    className="flex-1 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 rounded-xl px-3 py-2 text-gray-800 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                                                    placeholder="$ 0"
-                                                    inputMode="numeric"
-                                                    value={methodAmounts[m.id]}
-                                                    onChange={(e) => {
-                                                        const raw = parseCOP(e.target.value)
-                                                        setMethodAmounts({ ...methodAmounts, [m.id]: raw ? formatCOP(raw) : '' })
-                                                    }}
-                                                />
-                                            </div>
-                                        ))}
+                                            ))}
+                                        </div>
+                                        {(() => {
+                                            const sum = Object.values(methodAmounts).reduce((s, v) => s + (parseCOP(v) || 0), 0)
+                                            const diff = amount - sum
+                                            if (sum === 0) return null
+                                            return (
+                                                <p className={`text-xs mt-2 text-right ${diff === 0 ? 'text-green-500' : 'text-red-500'}`}>
+                                                    {diff === 0 ? 'Cuadra con el monto ✓' : `Faltan ${formatCOP(Math.abs(diff))} por asignar`}
+                                                </p>
+                                            )
+                                        })()}
                                     </div>
-                                    {(() => {
-                                        const sum = Object.values(methodAmounts).reduce((s, v) => s + (parseCOP(v) || 0), 0)
-                                        const diff = amount - sum
-                                        if (sum === 0) return null
-                                        return (
-                                            <p className={`text-xs mt-2 text-right ${diff === 0 ? 'text-green-500' : 'text-red-500'}`}>
-                                                {diff === 0 ? 'Cuadra con el monto ✓' : `Faltan ${formatCOP(Math.abs(diff))} por asignar`}
-                                            </p>
-                                        )
-                                    })()}
-                                </div>
+                                )}
                             </div>
                             <div>
                                 <label className="text-sm text-gray-500 dark:text-gray-400 mb-1 block">Frecuencia de pago</label>
