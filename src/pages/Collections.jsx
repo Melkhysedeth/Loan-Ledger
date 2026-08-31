@@ -74,7 +74,7 @@ export default function Collections() {
     const total = Object.values(grouped).reduce((s, arr) => s + arr.length, 0)
 
     return (
-        <div className="pb-24">
+        <div className="pb-24 bg-[#f3f4f6]">
             {/* Hero amarillo pastel */}
             <div className="sticky top-0 z-20 overflow-hidden pt-6 pb-10 px-4 bg-[#F5D98A]">
                 <div className="absolute inset-0 pointer-events-none">
@@ -127,7 +127,7 @@ export default function Collections() {
                     </svg>
                 </div>
 
-                <div className="absolute bottom-0 left-0 right-0 h-8 bg-white dark:bg-gray-900 rounded-t-[1.8rem]" />
+                <div className="absolute bottom-0 left-0 right-0 h-8 bg-[#f3f4f6] dark:bg-gray-900 rounded-t-[2rem] shadow-[0_-15px_35px_-5px_rgba(0,0,0,0.25)] dark:shadow-[0_-15px_35px_-5px_rgba(0,0,0,0.6)]" />
             </div>
 
             <div className="px-4 pt-4">

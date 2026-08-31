@@ -185,7 +185,7 @@ export function calcInterestCarryover(loan, payments = []) {
     const isVariable = loan.interest_type === 'variable'
     const sorted = [...payments].sort((a, b) => new Date(a.date) - new Date(b.date))
 
-    let capitalPaidSoFar = loan.initial_capital_paid || 0
+    let capitalPaidSoFar = 0
     let carryover = 0
 
     for (const p of sorted) {
@@ -193,11 +193,16 @@ export function calcInterestCarryover(loan, payments = []) {
         // ya quedaron saldados con la tasa vieja — no los usamos para calcular arrastre.
         const beforeRateChange = loan.interest_effective_date && p.date < loan.interest_effective_date
 
+        // Los pagos migrados de una unificación se hicieron bajo las condiciones
+        // (monto, tasa) del préstamo VIEJO, no del nuevo — no se pueden juzgar
+        // contra el interés esperado del préstamo actual.
+        const isMigrated = !!p.original_loan_id
+
         const baseInterest = isVariable
             ? calcInterest(loan.amount - capitalPaidSoFar, loan.interest_rate, loan.frequency)
             : (loan.interest_amount || 0)
 
-        if (!beforeRateChange) {
+        if (!beforeRateChange && !isMigrated) {
             const expected = baseInterest + carryover
             const actuallyPaid = p.interest_paid || 0
             carryover = expected - actuallyPaid

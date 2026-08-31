@@ -72,7 +72,7 @@ export default function ClientDetail() {
     const pagadoReal = payments
       .filter(p => p.loan_id === l.id)
       .reduce((a, p) => a + (p.capital_paid || 0), 0)
-    return s + pagadoReal + (l.initial_capital_paid || 0)
+    return s + pagadoReal
   }, 0)
 
   // Saldo pendiente real = lo que falta por pagar de capital

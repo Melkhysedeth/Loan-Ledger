@@ -76,6 +76,7 @@ export default function UnifyLoans() {
 
     const selectedLoans = loans.filter(l => selected.has(l.id))
     const totalAmount = selectedLoans.reduce((s, l) => s + (l.amount || 0), 0)
+    const allPaymentIds = selectedLoans.flatMap(l => (paymentsByLoan[l.id] || []).map(p => p.id))
     const totalCapitalHeredado = selectedLoans.reduce((s, l) => {
         const pays = paymentsByLoan[l.id] || []
         return s + pays.reduce((sum, p) => sum + (p.capital_paid || 0), 0)
@@ -85,6 +86,10 @@ export default function UnifyLoans() {
         return s + pays.reduce((sum, p) => sum + (p.interest_paid || 0), 0)
     }, 0)
     const saldoPendienteNuevo = totalAmount - totalCapitalHeredado
+
+    const totalPagosAMigrar = selectedLoans.reduce((s, l) => {
+        return s + (paymentsByLoan[l.id] || []).length
+    }, 0)
 
     async function handleSubmit() {
         setError('')
@@ -122,8 +127,8 @@ export default function UnifyLoans() {
                 first_payment_date: firstPaymentDate || null,
                 status: 'active',
                 notes: originNote,
-                initial_capital_paid: totalCapitalHeredado,   // 👈 nuevo
-                initial_interest_paid: totalInterestHeredado, // 👈 nuevo
+                initial_capital_paid: 0,
+                initial_interest_paid: 0,
                 is_unification: true,                          // 👈 nuevo
             })
             .select()
@@ -133,6 +138,29 @@ export default function UnifyLoans() {
             setError('Error creando el préstamo unificado: ' + loanError.message)
             setSaving(false)
             return
+        }
+
+        // ─── MIGRAR PAGOS AL NUEVO PRÉSTAMO ───
+        if (allPaymentIds.length > 0) {
+            // Actualizar cada préstamo seleccionado para migrar sus pagos
+            for (const loan of selectedLoans) {
+                const pays = paymentsByLoan[loan.id] || []
+                if (pays.length === 0) continue
+
+                const { error: paymentError } = await supabase
+                    .from('payments')
+                    .update({
+                        loan_id: newLoan.id,
+                        original_loan_id: loan.id
+                    })
+                    .in('id', pays.map(p => p.id))
+
+                if (paymentError) {
+                    setError('Error migrando pagos: ' + paymentError.message)
+                    setSaving(false)
+                    return
+                }
+            }
         }
 
         // 3. Marcar los préstamos viejos como unificados
@@ -209,6 +237,10 @@ export default function UnifyLoans() {
                         <p className="text-sm font-semibold text-purple-700 dark:text-purple-300 mb-2">Resumen del préstamo unificado</p>
                         <div className="text-sm space-y-1">
                             <div className="flex justify-between"><span className="text-gray-500">Monto total</span><span className="font-medium">{formatCOP(totalAmount)}</span></div>
+                            <div className="flex justify-between">
+                                <span className="text-gray-500">Pagos a migrar</span>
+                                <span className="font-medium">{totalPagosAMigrar} pagos</span>
+                            </div>
                             <div className="flex justify-between"><span className="text-gray-500">Capital ya pagado (heredado)</span><span className="font-medium">{formatCOP(totalCapitalHeredado)}</span></div>
                             <div className="flex justify-between"><span className="text-gray-500">Interés ya pagado (heredado)</span><span className="font-medium">{formatCOP(totalInterestHeredado)}</span></div>
                             <div className="flex justify-between border-t border-purple-200 dark:border-purple-700/40 pt-1 mt-1"><span className="text-gray-700 dark:text-gray-300 font-semibold">Saldo pendiente nuevo</span><span className="font-bold">{formatCOP(saldoPendienteNuevo)}</span></div>

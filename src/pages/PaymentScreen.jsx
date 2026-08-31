@@ -9,6 +9,8 @@ import {
   calcInterestCarryover,
 } from "../utils/loanCalc";
 import { ChevronLeft, Calendar, DollarSign, CheckCircle } from "lucide-react";
+import ConfirmWhatsAppModal from "../components/ConfirmWhatsAppModal";
+import { mensajePago } from "../utils/whatsappMessages";
 
 const METHODS = [
   {
@@ -82,6 +84,9 @@ export default function PaymentScreen() {
   const [notes, setNotes] = useState("");
   const [periodsToSettle, setPeriodsToSettle] = useState(1)
 
+  // Modal de confirmación de envío de WhatsApp tras registrar el pago
+  const [waModal, setWaModal] = useState({ open: false, phone: '', message: '' })
+
   useEffect(() => {
     load();
   }, [id]);
@@ -138,9 +143,18 @@ export default function PaymentScreen() {
     loan.frequency,
     paymentsMade,
   );
-  const capitalNum = parseCOP(capital) || 0;
   const interest = parseCOP(interestInput) || 0;
-  const total = interest + capitalNum;
+  const receivedNum = parseCOP(capital) || 0;
+
+  // Si no se coloca valor recibido, asumimos que pagó exactamente el interés.
+  const total = receivedNum > 0 ? receivedNum : interest;
+
+  // El pago primero cubre el interés.
+  // Solo el excedente se considera abono a capital.
+  const capitalNum = Math.max(0, total - interest);
+
+  // El interés realmente pagado nunca puede superar el valor recibido.
+  const actualInterest = Math.min(total, interest);
 
   const initials = client.name
     .split(" ")
@@ -153,6 +167,12 @@ export default function PaymentScreen() {
     ? `${paymentsMade + 1} de ${loan.num_payments}`
     : `Cuota ${paymentsMade + 1}`;
 
+  // Se llama al cerrar el modal de WhatsApp (haya enviado o no).
+  function finishAndExit() {
+    setWaModal({ open: false, phone: '', message: '' })
+    navigate(`/loans/${id}`)
+  }
+
   async function handleSave() {
     if (saving) return
     setSaving(true)
@@ -162,7 +182,8 @@ export default function PaymentScreen() {
       // correspondiente. El capital abonado va completo en la última fila.
       const rows = []
       if (periodsToSettle > 1) {
-        const interestPerPeriod = Math.round(interest / periodsToSettle)
+        const interestToApply = Math.min(total, interest)
+        const interestPerPeriod = Math.round(interestToApply / periodsToSettle)
 
         // 👇 Igual que en el otro bloque: calculamos los métodos activos
         const activeMethods = Object.entries(methodAmounts)
@@ -182,7 +203,9 @@ export default function PaymentScreen() {
           rows.push({
             loan_id: loan.id,
             date,
-            total_paid: isLast ? interestPerPeriod + capitalNum : interestPerPeriod,
+            total_paid: isLast
+              ? interestToApply - (interestPerPeriod * (periodsToSettle - 1)) + capitalNum
+              : interestPerPeriod,
             interest_paid: interestPerPeriod,
             capital_paid: isLast ? capitalNum : 0,
             late: mora.inMora,
@@ -216,7 +239,7 @@ export default function PaymentScreen() {
           loan_id: loan.id,
           date,
           total_paid: total,
-          interest_paid: interest,
+          interest_paid: actualInterest,
           capital_paid: capitalNum,
           late: mora.inMora,
           notes: [autoNote, notes || null].filter(Boolean).join(' ') || null,
@@ -229,11 +252,35 @@ export default function PaymentScreen() {
       await supabase.from('payments').insert(rows)
 
       const newRemaining = remaining - capitalNum
-      if (newRemaining <= 0) {
+      const liquidado = newRemaining <= 0
+      if (liquidado) {
         await supabase.from('loans').update({ status: 'paid' }).eq('id', loan.id)
       }
 
-      navigate(`/loans/${id}`)
+      // Totales reales de este registro (contempla el caso de varios períodos a la vez)
+      const totalPaidBatch = rows.reduce((s, r) => s + r.total_paid, 0)
+      const interestPaidBatch = rows.reduce((s, r) => s + r.interest_paid, 0)
+      const capitalPaidBatch = rows.reduce((s, r) => s + r.capital_paid, 0)
+
+      // Cuánto quedó faltando (o a favor) de interés de este período,
+      // para informarlo en el mensaje. Si se liquidó el préstamo no aplica.
+      const diffInteres = nextExpectedInterest - interestPaidBatch
+
+      const message = mensajePago({
+        client,
+        date,
+        totalPaid: totalPaidBatch,
+        interestPaid: interestPaidBatch,
+        capitalPaid: capitalPaidBatch,
+        remainingCapital: newRemaining,
+        interestPendiente: Math.max(0, diffInteres),
+        saldoFavorInteres: Math.max(0, -diffInteres),
+        liquidado,
+      })
+
+      // Ofrecemos enviar el WhatsApp; el envío real solo ocurre si el
+      // usuario da clic en "Enviar" dentro del modal.
+      setWaModal({ open: true, phone: client.phone, message })
     } finally {
       setSaving(false)
     }
@@ -439,7 +486,7 @@ export default function PaymentScreen() {
             </div>
             <div className="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-3">
               <p className="text-[10px] text-gray-400 mb-1">
-                Capital adicional
+                Capital Abonado
               </p>
               <p className="text-sm font-bold text-gray-700 dark:text-gray-200">
                 {capitalNum > 0 ? formatCOP(capitalNum) : "—"}
@@ -449,7 +496,7 @@ export default function PaymentScreen() {
 
           <div>
             <label className="text-xs text-gray-400 mb-1.5 block">
-              {interest > 0 ? "Abono a capital (opcional)" : "Monto a abonar"}
+              Valor recibido (opcional)
             </label>
             <input
               className="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2.5 text-gray-800 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
@@ -636,6 +683,13 @@ export default function PaymentScreen() {
           </button>
         </div>
       </div>
+
+      <ConfirmWhatsAppModal
+        open={waModal.open}
+        phone={waModal.phone}
+        message={waModal.message}
+        onClose={finishAndExit}
+      />
     </div>
   );
 }

@@ -19,7 +19,7 @@ export default function Reports() {
     async function load() {
         const [{ data: loans }, { data: payments }, { data: clients }, { data: withdrawals }] = await Promise.all([
             supabase.from('loans').select('id, amount, interest_rate, status, created_at'),
-            supabase.from('payments').select('total_paid, interest_paid, created_at'),
+            supabase.from('payments').select('total_paid, interest_paid, created_at').eq('voided', false),
             supabase.from('clients').select('id'),
             supabase.from('capital_withdrawals').select('amount, date, notes, is_transfer').order('date', { ascending: false }),
         ])

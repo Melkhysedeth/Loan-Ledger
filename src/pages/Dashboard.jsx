@@ -161,7 +161,7 @@ export default function Dashboard() {
 
         // Saldo pendiente: capital de préstamos activos menos lo ya pagado
         const pendingBalance = activeLoans.reduce((s, l) => {
-            const paid = allPayments.filter(p => p.loan_id === l.id).reduce((a, p) => a + (p.capital_paid || 0), 0) + (l.initial_capital_paid || 0)
+            const paid = allPayments.filter(p => p.loan_id === l.id).reduce((a, p) => a + (p.capital_paid || 0), 0)
             return s + (l.amount - paid)
         }, 0)
 
@@ -174,7 +174,9 @@ export default function Dashboard() {
         for (const loan of activeLoans) {
             if (!loan.first_payment_date) continue
             const loanPayments = allPayments.filter(p => p.loan_id === loan.id)
-            const paymentsMade = loanPayments.length
+            // Mismo criterio que en LoanDetail.jsx: los pagos migrados de una
+            // unificación no cuentan como cuotas del cronograma nuevo.
+            const paymentsMade = loanPayments.filter(p => !p.original_loan_id).length
             const classification = classifyLoan(loan.first_payment_date, loan.frequency, paymentsMade)
             const client = allClients.find(c => c.id === loan.client_id)
 
@@ -257,7 +259,7 @@ export default function Dashboard() {
     const progressPct = totalLine > 0 ? Math.min(100, Math.round((pendingBalance / totalLine) * 100)) : 0
 
     return (
-        <div className="pb-4">
+        <div className="pb-4 bg-[#f3f4f6]">
             {/* Header con fondo de color */}
             <div className="sticky top-0 z-20 overflow-hidden bg-[#83d4d2] dark:bg-[#3f8b89] pb-10">
 
@@ -362,7 +364,7 @@ export default function Dashboard() {
                         </Carousel>
                     </div>
                 </div>
-                <div className="absolute bottom-0 left-0 right-0 h-8 bg-white dark:bg-gray-900 rounded-t-[1.8rem]" />
+                <div className="absolute bottom-0 left-0 right-0 h-8 bg-[#f3f4f6] dark:bg-gray-900 rounded-t-[2rem] shadow-[0_-15px_35px_-5px_rgba(0,0,0,0.25)] dark:shadow-[0_-15px_35px_-5px_rgba(0,0,0,0.6)]" />
             </div>
 
             <div className="px-4 pt-3 space-y-5">
@@ -584,15 +586,15 @@ function MetricCard({ label, sub, value, color, Icon }) {
     }
 
     return (
-        <div className="bg-white dark:bg-gray-800 rounded-lg p-3 relative overflow-hidden min-w-0 shadow-sm">
-            <div className="flex items-center gap-1.5 mb-1.5">
-                <div className={`w-6 h-6 flex items-center justify-center rounded-md shrink-0 ${iconColors[color] || 'bg-gray-50 text-gray-600'}`}>
-                    <Icon size={13} />
-                </div>
-                <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{label}</p>
+        <div className="bg-white dark:bg-gray-800 rounded-lg p-3 relative overflow-hidden min-w-0 shadow-sm flex items-center gap-3">
+            <div className={`w-11 h-11 flex items-center justify-center rounded-xl shrink-0 ${iconColors[color] || 'bg-gray-50 text-gray-600'}`}>
+                <Icon size={20} />
             </div>
-            <p className="text-lg font-bold text-gray-900 dark:text-white truncate">{value}</p>
-            <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-0.5">{sub}</p>
+            <div className="min-w-0 flex-1">
+                <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{label}</p>
+                <p className="text-lg font-bold text-gray-900 dark:text-white truncate">{value}</p>
+                <p className="text-[11px] text-gray-400 dark:text-gray-500 truncate">{sub}</p>
+            </div>
         </div>
     )
 }

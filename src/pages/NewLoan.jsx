@@ -5,6 +5,8 @@ import { calcInterest, calcTotalLoan } from '../utils/loanCalc'
 import { useFormPersist } from '../hooks/useFormPersist'
 import { ChevronLeft } from 'lucide-react'
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom'
+import ConfirmWhatsAppModal from '../components/ConfirmWhatsAppModal'
+import { mensajeDesembolso } from '../utils/whatsappMessages'
 
 const initialLoan = {
     amount: '', rate: '', frequency: 'mensual',
@@ -63,6 +65,9 @@ export default function NewLoan() {
     const [loan, setLoan] = useState(initialLoan)
     const [saving, setSaving] = useState(false)
     const [methodAmounts, setMethodAmounts] = useState({ efectivo: '', nequi: '', breb: '' })
+
+    // Modal de confirmación de envío de WhatsApp tras desembolsar
+    const [waModal, setWaModal] = useState({ open: false, phone: '', message: '' })
 
     const amount = parseCOP(loan.amount)
     const rate = parseFloat(loan.rate) || 0
@@ -179,6 +184,14 @@ export default function NewLoan() {
         try { sessionStorage.removeItem(SELECTED_CLIENT_KEY) } catch { /* noop */ }
     }
 
+    // Se llama al cerrar el modal de WhatsApp (haya enviado o no) — es el
+    // punto en el que sí navegamos y limpiamos el formulario.
+    function finishAndExit() {
+        setWaModal({ open: false, phone: '', message: '' })
+        clearAll()
+        navigate('/loans')
+    }
+
     async function handleSubmit() {
         if (!selectedClient) { alert('Selecciona un cliente.'); return }
         if (!loan.amount || !loan.rate || !loan.startDate) {
@@ -218,17 +231,23 @@ export default function NewLoan() {
             if (isEditing) {
                 await supabase.from('loans').update(payload).eq('id', editLoan.id)
                 // No se toca loan_disbursements: el desembolso ya ocurrió y no se vuelve a pedir.
-            } else {
-                const { data } = await supabase.from('loans').insert({ ...payload, status: 'active' }).select().single()
-                loanId = data.id
-                const disbursementRows = activeMethods.map(([m, amt]) => ({
-                    loan_id: loanId, payment_method: m, amount: amt,
-                }))
-                await supabase.from('loan_disbursements').insert(disbursementRows)
+                // Tampoco se ofrece WhatsApp: una edición no es un nuevo desembolso.
+                clearAll()
+                navigate('/loans')
+                return
             }
 
-            clearAll()
-            navigate('/loans')
+            const { data } = await supabase.from('loans').insert({ ...payload, status: 'active' }).select().single()
+            loanId = data.id
+            const disbursementRows = activeMethods.map(([m, amt]) => ({
+                loan_id: loanId, payment_method: m, amount: amt,
+            }))
+            await supabase.from('loan_disbursements').insert(disbursementRows)
+
+            // Préstamo nuevo desembolsado: ofrecemos enviar el WhatsApp.
+            // El envío real solo ocurre si el usuario da clic en "Enviar" dentro del modal.
+            const message = mensajeDesembolso({ client: selectedClient, loan: { ...payload, amount } })
+            setWaModal({ open: true, phone: selectedClient.phone, message })
         } finally {
             setSaving(false)
         }
@@ -406,6 +425,13 @@ export default function NewLoan() {
                     </button>
                 </>
             )}
+
+            <ConfirmWhatsAppModal
+                open={waModal.open}
+                phone={waModal.phone}
+                message={waModal.message}
+                onClose={finishAndExit}
+            />
         </div>
     )
 }

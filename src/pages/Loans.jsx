@@ -206,10 +206,10 @@ export default function Loans() {
   });
 
   return (
-    <div className="pb-24">
+    <div className="pb-24 bg-[#f3f4f6]">
       {/* Hero lila */}
-      <div className="sticky top-0 z-20 overflow-hidden pt-6 pb-10 px-4 bg-[#C9A8E8]">
-        <div className="absolute inset-0 pointer-events-none">
+      <div className="sticky top-0 z-20 pt-6 pb-10 px-4 bg-[#C9A8E8] border-t border-white/20">
+        <div className="absolute inset-0 pointer-events-none overflow-hidden rounded-b-[2rem]">
           <svg className="absolute -top-12 -right-20 w-72 h-72 text-white/25" viewBox="0 0 200 200" fill="currentColor">
             <path d="M45.3,-58.5C59.5,-49.8,72.1,-36.9,76.6,-21.5C81.1,-6.1,77.5,11.8,69.6,26.9C61.7,42,49.5,54.3,35.1,62.6C20.7,70.9,4.1,75.2,-12.7,74.2C-29.5,73.2,-46.5,66.9,-58.4,55.1C-70.3,43.3,-77.1,26,-78.7,8.1C-80.3,-9.8,-76.7,-28.3,-66.6,-42.1C-56.5,-55.9,-39.9,-65,-23.7,-72C-7.5,-79,8.3,-83.9,22.9,-79.9C37.5,-75.9,45.3,-58.5,45.3,-58.5Z" transform="translate(100 100)" />
           </svg>
@@ -295,7 +295,7 @@ export default function Loans() {
           </button>
         </div>
 
-        <div className="absolute bottom-0 left-0 right-0 h-8 bg-white dark:bg-gray-900 rounded-t-[1.8rem]" />
+        <div className="absolute bottom-0 left-0 right-0 h-8 bg-[#f3f4f6] dark:bg-gray-900 rounded-t-[2rem] shadow-[0_-15px_35px_-5px_rgba(0,0,0,0.25)] dark:shadow-[0_-15px_35px_-5px_rgba(0,0,0,0.6)]" />
       </div>
 
       {/* Lista */}
@@ -405,7 +405,7 @@ function LoanCard({ loan, index, payments, onPress, onEdit, onDeleted, even }) {
       <button
         onClick={onPress}
         {...longPress}
-        className={`w-full ${even ? "bg-zinc-50 dark:bg-gray-800" : "bg-slate-50 dark:bg-gray-800/60"} rounded-2xl shadow-md p-4 text-left active:scale-[0.98] transition`}
+        className={`w-full ${even ? "bg-white dark:bg-gray-800" : "bg-white dark:bg-gray-800/60"} rounded-2xl shadow-md p-4 text-left active:scale-[0.98] transition`}
       >
         {/* Fila superior: código + estado */}
         <div className="flex justify-between items-center mb-1">

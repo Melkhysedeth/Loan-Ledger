@@ -143,7 +143,7 @@ export default function Clients() {
   })
 
   return (
-    <div className="p-4 pb-24">
+    <div className="p-4 pb-24 bg-[#f3f4f6]">
       {/* Hero magenta */}
       <div className="sticky top-0 z-20 overflow-hidden -mx-4 -mt-4 px-4 pt-6 pb-10 bg-[#eeaade]">
         <div className="absolute inset-0 pointer-events-none">
@@ -238,11 +238,11 @@ export default function Clients() {
             <UserPlus size={18} /> Nuevo cliente
           </button>
         </div>
-        <div className="absolute bottom-0 left-0 right-0 h-8 bg-white dark:bg-gray-900 rounded-t-[1.8rem]" />
+        <div className="absolute bottom-0 left-0 right-0 h-8 bg-[#f3f4f6] dark:bg-gray-900 rounded-t-[2rem] shadow-[0_-15px_35px_-5px_rgba(0,0,0,0.25)] dark:shadow-[0_-15px_35px_-5px_rgba(0,0,0,0.6)]" />
       </div>
 
       {/* Contenido blanco */}
-      <div className="bg-white dark:bg-gray-900 rounded-t-[1.8rem] pt-4 -mx-4 px-4 relative z-10">
+      <div className="bg-[#f3f4f6] dark:bg-gray-900 rounded-t-[1.8rem] pt-4 -mx-4 px-4 relative z-10">
 
         {loading && <p className="text-center text-gray-400 mt-10">Cargando...</p>}
 
@@ -318,7 +318,7 @@ function ClientCard({ client, onRefresh, onPress, onEdit, onDeleted, even }) {
 
   return (
     <>
-      <div className={`${even ? 'bg-zinc-50 dark:bg-gray-800' : 'bg-slate-50 dark:bg-gray-800/60'} rounded-2xl shadow-md p-4 active:scale-95 transition`} {...longPress}>
+      <div className={`${even ? 'bg-white dark:bg-gray-800' : 'bg-white dark:bg-gray-800/60'} rounded-2xl shadow-md p-4 active:scale-95 transition`} {...longPress}>
         <div className="flex justify-between items-start mb-2" onClick={onPress}>
           <div className="flex items-center gap-3">
             <div

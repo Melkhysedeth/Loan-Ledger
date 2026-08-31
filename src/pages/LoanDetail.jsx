@@ -90,10 +90,12 @@ export default function LoanDetail() {
   // para mostrarse en el historial con su motivo.
   const activePayments = payments.filter(p => !p.voided)
 
-  const totalPaid = activePayments.reduce((s, p) => s + (p.capital_paid || 0), 0) + (loan.initial_capital_paid || 0)
-  const totalInterestPaid = activePayments.reduce((s, p) => s + (p.interest_paid || 0), 0) + (loan.initial_interest_paid || 0)
+  const totalPaid = activePayments.reduce((s, p) => s + (p.capital_paid || 0), 0)
+  const totalInterestPaid = activePayments.reduce((s, p) => s + (p.interest_paid || 0), 0)
   const remaining = loan.amount - totalPaid
-  const paymentsMade = activePayments.length
+  // Los pagos migrados de una unificación no cuentan como cuotas del cronograma
+  // nuevo — el cronograma arranca de cero con el préstamo unificado.
+  const paymentsMade = activePayments.filter(p => !p.original_loan_id).length
 
   const isFrozen = loan.status === "frozen";
   const isPaid = loan.status === "paid";
@@ -558,6 +560,11 @@ export default function LoanDetail() {
                   <p className="text-xs text-gray-400 mt-0.5 capitalize">
                     {p.payment_method === 'breb' ? 'Bre-B' : p.payment_method}
                     {p.reference ? ` · Ref: ${p.reference}` : ''}
+                  </p>
+                )}
+                {p.original_loan_id && !p.voided && (
+                  <p className="text-xs text-purple-400 mt-0.5">
+                    Migrado de préstamo #{String(p.original_loan_id).slice(-4).padStart(4, "0")}
                   </p>
                 )}
                 {p.voided && p.void_reason && (
