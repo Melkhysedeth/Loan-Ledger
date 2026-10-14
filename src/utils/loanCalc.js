@@ -117,7 +117,7 @@ export function calcMora(loan, paymentsMade, totalCapitalPaid = 0) {
     const mesesEnMora = loan.frequency === 'quincenal' ? periodosEnMora / 2 : periodosEnMora
 
     // Valor en dinero de los intereses que debe
-    let valorInteresesDebe = 0
+    let valorInteresesDebe
     if (loan.interest_type === 'variable') {
         // Interés mensual sobre el saldo pendiente actual
         const interestMensual = Math.round(((loan.amount - totalCapitalPaid) * loan.interest_rate) / 100)
@@ -161,7 +161,7 @@ export function calcMora(loan, paymentsMade, totalCapitalPaid = 0) {
  */
 export function calcInterestCarryover(loan, payments = []) {
     if (!loan || loan.status === 'agreement') {
-        return { carryover: 0, nextExpectedInterest: 0 }
+        return { carryover: 0, nextExpectedInterest: 0, nextBaseInterest: 0 }
     }
 
     const isVariable = loan.interest_type === 'variable'
@@ -204,5 +204,5 @@ export function calcInterestCarryover(loan, payments = []) {
 
     const nextExpectedInterest = Math.max(0, nextBaseInterest + carryover)
 
-    return { carryover, nextExpectedInterest }
+    return { carryover, nextExpectedInterest, nextBaseInterest }
 }

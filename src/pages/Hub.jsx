@@ -119,7 +119,6 @@ export default function Hub() {
                 <div className="grid grid-cols-2 gap-3">
                     <SummaryCard
                         Icon={Wallet}
-                        variant="light"
                         title="Préstamos"
                         value={formatCOP(metrics.totalLent)}
                         sub="Capital colocado"
@@ -133,9 +132,8 @@ export default function Hub() {
             {/* Panel embebido — mismo contenedor "alto relieve", ahora blanco en vez de negro */}
             <div className="px-4 -mt-1">
                 <div
-                    className="rounded-[2rem] p-5"
+                    className="rounded-[2rem] p-5 bg-white dark:bg-gray-900"
                     style={{
-                        background: '#FFFFFF',
                         boxShadow: `
                             inset 0 2px 4px rgba(0,0,0,0.06),
                             inset 0 -1px 0 rgba(0,0,0,0.02),
@@ -162,39 +160,32 @@ export default function Hub() {
     )
 }
 
-function SummaryCard({ Icon, variant, title, value, sub, stat1Label, stat1Value, stat2Label, stat2Value, stat2Danger, onClick }) {
-    const isAmber = variant === 'amber'
+function SummaryCard({ Icon, title, value, sub, stat1Label, stat1Value, stat2Label, stat2Value, stat2Danger, onClick }) {
     return (
         <button
             onClick={onClick}
-            className="text-left rounded-3xl p-4 active:scale-95 transition"
-            style={{
-                background: isAmber ? '#F3BD68' : '#FFFFFF',
-                boxShadow: '0 1px 2px rgba(16,24,40,0.04), 0 8px 20px -6px rgba(16,24,40,0.10)',
-            }}
+            className="text-left rounded-3xl p-4 active:scale-95 transition bg-white dark:bg-gray-800"
+            style={{ boxShadow: '0 1px 2px rgba(16,24,40,0.04), 0 8px 20px -6px rgba(16,24,40,0.10)' }}
         >
             <div className="flex items-center justify-between mb-4">
-                <div
-                    className="w-10 h-10 rounded-full flex items-center justify-center"
-                    style={{ background: isAmber ? 'rgba(23,37,49,0.12)' : '#F3EFE9' }}
-                >
-                    <Icon size={18} color={isAmber ? '#172531' : '#0f766e'} />
+                <div className="w-10 h-10 rounded-full flex items-center justify-center bg-[#F3EFE9] dark:bg-gray-700">
+                    <Icon size={18} className="text-teal-700 dark:text-teal-400" />
                 </div>
-                <ChevronRight size={16} className={isAmber ? 'text-[#172531]/50' : 'text-gray-300'} />
+                <ChevronRight size={16} className="text-gray-300 dark:text-gray-500" />
             </div>
 
-            <p className={`text-sm font-semibold ${isAmber ? 'text-[#172531]' : 'text-gray-800 dark:text-white'}`}>{title}</p>
-            <p className={`text-xl font-black mt-1 truncate ${isAmber ? 'text-[#172531]' : 'text-gray-900 dark:text-white'}`}>{value}</p>
-            <p className={`text-[11px] mb-3 ${isAmber ? 'text-[#172531]/60' : 'text-gray-400'}`}>{sub}</p>
+            <p className="text-sm font-semibold text-gray-800 dark:text-white">{title}</p>
+            <p className="text-xl font-black mt-1 truncate text-gray-900 dark:text-white">{value}</p>
+            <p className="text-[11px] mb-3 text-gray-400">{sub}</p>
 
-            <div className={`flex items-center justify-between pt-3 border-t ${isAmber ? 'border-[#172531]/10' : 'border-gray-100 dark:border-gray-700'}`}>
+            <div className="flex items-center justify-between pt-3 border-t border-gray-100 dark:border-gray-700">
                 <div>
-                    <p className={`text-lg font-bold ${isAmber ? 'text-[#172531]' : 'text-gray-800 dark:text-white'}`}>{stat1Value}</p>
-                    <p className={`text-[10px] ${isAmber ? 'text-[#172531]/60' : 'text-gray-400'}`}>{stat1Label}</p>
+                    <p className="text-lg font-bold text-gray-800 dark:text-white">{stat1Value}</p>
+                    <p className="text-[10px] text-gray-400">{stat1Label}</p>
                 </div>
                 <div className="text-right">
-                    <p className={`text-lg font-bold ${stat2Danger ? 'text-red-500' : isAmber ? 'text-[#172531]' : 'text-gray-800 dark:text-white'}`}>{stat2Value}</p>
-                    <p className={`text-[10px] ${isAmber ? 'text-[#172531]/60' : 'text-gray-400'}`}>{stat2Label}</p>
+                    <p className={`text-lg font-bold ${stat2Danger ? 'text-red-500' : 'text-gray-800 dark:text-white'}`}>{stat2Value}</p>
+                    <p className="text-[10px] text-gray-400">{stat2Label}</p>
                 </div>
             </div>
         </button>

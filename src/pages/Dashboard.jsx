@@ -14,7 +14,7 @@ import {
 } from 'lucide-react'
 import Carousel from '../components/Carousel'
 import { activePayments, groupBy, installmentsMade } from '../utils/loanMetrics'
-import { isActiveLoan, totalLentOf, pendingBalanceOf, collectedSince, monthStart } from '../utils/accounting'
+import { isActiveLoan, totalLentOf, pendingBalanceOf, pendingOf, collectedSince, monthStart } from '../utils/accounting'
 
 function getGreeting() {
     const h = new Date().getHours()
@@ -83,6 +83,11 @@ export default function Dashboard() {
         // Los pagos anulados no entran en ninguna cifra (cobrado, capital disponible, gráficas, saldos).
         const allPayments = activePayments(payments || [])
         const paymentsByLoan = groupBy(allPayments, 'loan_id')
+        // Capital que realmente salió del negocio por un préstamo: en los cancelados el saldo
+        // pendiente vuelve al disponible (como dice el modal de cancelar), solo cuenta lo ya abonado.
+        const lentOf = (l) => l.status === 'cancelled'
+            ? (l.amount || 0) - pendingOf(l, paymentsByLoan.get(l.id) || [])
+            : (l.amount || 0)
 
         // ── Disponible para prestar ──
         // Se ancla en la fecha de tu primera inyección (el ajuste inicial).
@@ -100,7 +105,7 @@ export default function Dashboard() {
                 .reduce((s, p) => s + (p.total_paid || 0), 0)
             const lentSinceStart = allLoans
                 .filter(l => l.start_date && l.start_date >= trackingStartDate && !l.is_unification)
-                .reduce((s, l) => s + (l.amount || 0), 0)
+                .reduce((s, l) => s + lentOf(l), 0)
             const withdrawnSinceStart = (withdrawals || [])
                 .filter(w => w.date >= trackingStartDate)
                 .reduce((s, w) => s + (w.amount || 0), 0)
@@ -128,14 +133,16 @@ export default function Dashboard() {
                 if (d.payment_method !== method) return s
                 const loan = allLoans.find(l => l.id === d.loan_id)
                 if (!loan || !loan.start_date || loan.start_date < start || loan.is_unification) return s
-                return s + (d.amount || 0)
+                // En un cancelado solo cuenta la parte proporcional ya abonada.
+                const share = loan.amount ? lentOf(loan) / loan.amount : 1
+                return s + (d.amount || 0) * share
             }, 0)
 
             // Préstamos viejos, sin fila en loan_disbursements: caen al modo anterior
             const lentFromLegacyLoans = allLoans
                 .filter(l => !loanIdsWithDisbursements.has(l.id) && l.payment_method === method
                     && l.start_date && l.start_date >= start && !l.is_unification)
-                .reduce((s, l) => s + (l.amount || 0), 0)
+                .reduce((s, l) => s + lentOf(l), 0)
 
             const lent = lentFromDisbursements + lentFromLegacyLoans
 
@@ -251,7 +258,7 @@ export default function Dashboard() {
     const progressPct = totalLine > 0 ? Math.min(100, Math.round((pendingBalance / totalLine) * 100)) : 0
 
     return (
-        <div className="pb-4 bg-[#f3f4f6]">
+        <div className="pb-4 bg-[#f3f4f6] dark:bg-gray-950">
             {/* Header con fondo de color */}
             <div className="sticky top-0 z-20 overflow-hidden bg-[#83d4d2] dark:bg-[#3f8b89] pb-10">
 
@@ -356,7 +363,7 @@ export default function Dashboard() {
                         </Carousel>
                     </div>
                 </div>
-                <div className="absolute bottom-0 left-0 right-0 h-8 bg-[#f3f4f6] dark:bg-gray-900 rounded-t-[2rem] shadow-[0_-15px_35px_-5px_rgba(0,0,0,0.25)] dark:shadow-[0_-15px_35px_-5px_rgba(0,0,0,0.6)]" />
+                <div className="absolute bottom-0 left-0 right-0 h-8 bg-[#f3f4f6] dark:bg-gray-950 rounded-t-[2rem] shadow-[0_-15px_35px_-5px_rgba(0,0,0,0.25)] dark:shadow-[0_-15px_35px_-5px_rgba(0,0,0,0.6)]" />
             </div>
 
             <div className="px-4 pt-3 space-y-5">
@@ -573,13 +580,13 @@ export default function Dashboard() {
 
 function MetricCard({ label, sub, value, color, Icon }) {
     const iconColors = {
-        blue: 'text-blue-600 bg-blue-50', green: 'text-green-600 bg-green-50', red: 'text-red-600 bg-red-50',
-        amber: 'text-amber-600 bg-amber-50', purple: 'text-purple-600 bg-purple-50',
+        blue: 'text-blue-600 bg-blue-50 dark:text-blue-400 dark:bg-blue-900/30', green: 'text-green-600 bg-green-50 dark:text-green-400 dark:bg-green-900/30', red: 'text-red-600 bg-red-50 dark:text-red-400 dark:bg-red-900/30',
+        amber: 'text-amber-600 bg-amber-50 dark:text-amber-400 dark:bg-amber-900/30', purple: 'text-purple-600 bg-purple-50 dark:text-purple-400 dark:bg-purple-900/30',
     }
 
     return (
         <div className="bg-white dark:bg-gray-800 rounded-lg p-3 relative overflow-hidden min-w-0 shadow-sm flex items-center gap-3">
-            <div className={`w-11 h-11 flex items-center justify-center rounded-xl shrink-0 ${iconColors[color] || 'bg-gray-50 text-gray-600'}`}>
+            <div className={`w-11 h-11 flex items-center justify-center rounded-xl shrink-0 ${iconColors[color] || 'bg-gray-50 text-gray-600 dark:bg-gray-700 dark:text-gray-300'}`}>
                 <Icon size={20} />
             </div>
             <div className="min-w-0 flex-1">
@@ -653,8 +660,8 @@ function PaymentRow({ payment, last, onClick }) {
 
 function QuickAction({ label, Icon, color, onClick }) {
     const iconColors = {
-        blue: 'text-blue-600 bg-blue-50', green: 'text-green-600 bg-green-50', red: 'text-red-600 bg-red-50',
-        amber: 'text-amber-600 bg-amber-50', purple: 'text-purple-600 bg-purple-50',
+        blue: 'text-blue-600 bg-blue-50 dark:text-blue-400 dark:bg-blue-900/30', green: 'text-green-600 bg-green-50 dark:text-green-400 dark:bg-green-900/30', red: 'text-red-600 bg-red-50 dark:text-red-400 dark:bg-red-900/30',
+        amber: 'text-amber-600 bg-amber-50 dark:text-amber-400 dark:bg-amber-900/30', purple: 'text-purple-600 bg-purple-50 dark:text-purple-400 dark:bg-purple-900/30',
     }
     return (
         <button

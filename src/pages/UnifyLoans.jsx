@@ -77,11 +77,14 @@ export default function UnifyLoans() {
     const selectedLoans = loans.filter(l => selected.has(l.id))
     const totalAmount = selectedLoans.reduce((s, l) => s + (l.amount || 0), 0)
     const allPaymentIds = selectedLoans.flatMap(l => (paymentsByLoan[l.id] || []).map(p => p.id))
-    const totalCapitalHeredado = selectedLoans.reduce((s, l) => {
+    // Incluye el capital/interés inicial que cada préstamo ya traía pagado, para no perderlo al unificar.
+    const initialCapitalHeredado = selectedLoans.reduce((s, l) => s + (l.initial_capital_paid || 0), 0)
+    const initialInterestHeredado = selectedLoans.reduce((s, l) => s + (l.initial_interest_paid || 0), 0)
+    const totalCapitalHeredado = initialCapitalHeredado + selectedLoans.reduce((s, l) => {
         const pays = paymentsByLoan[l.id] || []
         return s + pays.reduce((sum, p) => sum + (p.capital_paid || 0), 0)
     }, 0)
-    const totalInterestHeredado = selectedLoans.reduce((s, l) => {
+    const totalInterestHeredado = initialInterestHeredado + selectedLoans.reduce((s, l) => {
         const pays = paymentsByLoan[l.id] || []
         return s + pays.reduce((sum, p) => sum + (p.interest_paid || 0), 0)
     }, 0)
@@ -127,8 +130,8 @@ export default function UnifyLoans() {
                 first_payment_date: firstPaymentDate || null,
                 status: 'active',
                 notes: originNote,
-                initial_capital_paid: 0,
-                initial_interest_paid: 0,
+                initial_capital_paid: initialCapitalHeredado,
+                initial_interest_paid: initialInterestHeredado,
                 is_unification: true,                          // 👈 nuevo
             })
             .select()
@@ -138,6 +141,18 @@ export default function UnifyLoans() {
             setError('Error creando el préstamo unificado: ' + loanError.message)
             setSaving(false)
             return
+        }
+
+        // Si un paso posterior falla, se devuelven los pagos a sus préstamos y se borra el unificado,
+        // para no dejar el capital contado dos veces (viejos activos + unificado activo).
+        async function rollback() {
+            // Cada pago vuelve a su préstamo con su original_loan_id previo (puede venir de otra unificación).
+            for (const pay of selectedLoans.flatMap(l => paymentsByLoan[l.id] || [])) {
+                await supabase.from('payments')
+                    .update({ loan_id: pay.loan_id, original_loan_id: pay.original_loan_id ?? null })
+                    .eq('id', pay.id)
+            }
+            await supabase.from('loans').delete().eq('id', newLoan.id)
         }
 
         // ─── MIGRAR PAGOS AL NUEVO PRÉSTAMO ───
@@ -156,7 +171,8 @@ export default function UnifyLoans() {
                     .in('id', pays.map(p => p.id))
 
                 if (paymentError) {
-                    setError('Error migrando pagos: ' + paymentError.message)
+                    await rollback()
+                    setError('Error migrando pagos, no se unificó nada: ' + paymentError.message)
                     setSaving(false)
                     return
                 }
@@ -170,7 +186,8 @@ export default function UnifyLoans() {
             .in('id', selectedLoans.map(l => l.id))
 
         if (updateError) {
-            setError('El préstamo se creó pero no se pudieron cerrar los préstamos viejos: ' + updateError.message)
+            await rollback()
+            setError('No se pudieron cerrar los préstamos viejos, no se unificó nada: ' + updateError.message)
             setSaving(false)
             return
         }

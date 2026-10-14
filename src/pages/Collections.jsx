@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../db/supabase'
 import { formatCOP } from '../utils/format'
-import { calcNextPaymentDate, classifyLoan } from '../utils/loanCalc'
-import { installmentsMade } from '../utils/loanMetrics'
+import { calcNextPaymentDate, classifyLoan, calcMora, calcInterestCarryover } from '../utils/loanCalc'
+import { activePayments, installmentsMade, loanCapitalPaid } from '../utils/loanMetrics'
 import { collectedSince, monthStart } from '../utils/accounting'
 import { AlertCircle, Clock, CheckCircle, ChevronRight, MessageCircle, Bell } from 'lucide-react'
 
@@ -22,7 +22,7 @@ function enviarRecordatorio(loan) {
     const fecha = loan.nextPayment
         ? loan.nextPayment.toLocaleDateString('es-CO', { day: 'numeric', month: 'long' })
         : 'próximamente'
-    const mensaje = `Hola ${client.name}, te recordamos que tienes un pago de ${formatCOP(loan.interest_amount)} con fecha límite el ${fecha}. Por favor contáctanos para coordinar. 🙏`
+    const mensaje = `Hola ${client.name}, te recordamos que tienes un pago de ${formatCOP(loan.interestDue)} con fecha límite el ${fecha}. Por favor contáctanos para coordinar. 🙏`
     window.open(`https://wa.me/${fullPhone}?text=${encodeURIComponent(mensaje)}`, '_blank')
 }
 
@@ -53,7 +53,7 @@ export default function Collections() {
 
         for (const loan of activeLoans) {
             if (!loan.first_payment_date) continue
-            const loanPayments = (allPayments || []).filter(p => p.loan_id === loan.id)
+            const loanPayments = activePayments((allPayments || []).filter(p => p.loan_id === loan.id))
             const paymentsMade = installmentsMade(loanPayments)
             const classification = classifyLoan(loan.first_payment_date, loan.frequency, paymentsMade)
             if (!result[classification]) continue
@@ -61,7 +61,15 @@ export default function Collections() {
             const client = (allClients || []).find(c => c.id === loan.client_id)
             const nextPayment = calcNextPaymentDate(loan.first_payment_date, loan.frequency, paymentsMade)
 
-            result[classification].push({ ...loan, client, nextPayment, paymentsMade })
+            // Interés a cobrar: el mismo cálculo de PaymentScreen (variable sobre saldo, saldo de interés
+            // pendiente/a favor, acuerdos en 0). Si está atrasado, se multiplican los períodos en mora.
+            const { carryover, nextBaseInterest } = calcInterestCarryover(loan, loanPayments)
+            const periods = classification === 'overdue'
+                ? Math.max(1, calcMora(loan, paymentsMade, loanCapitalPaid(loan, loanPayments)).periodosEnMora)
+                : 1
+            const interestDue = Math.max(0, nextBaseInterest * periods + carryover)
+
+            result[classification].push({ ...loan, client, nextPayment, paymentsMade, interestDue, periodInterest: nextBaseInterest, periods })
         }
 
         setGrouped(result)
@@ -71,7 +79,7 @@ export default function Collections() {
     const total = Object.values(grouped).reduce((s, arr) => s + arr.length, 0)
 
     return (
-        <div className="pb-24 bg-[#f3f4f6]">
+        <div className="pb-24 bg-[#f3f4f6] dark:bg-gray-950">
             {/* Hero amarillo pastel */}
             <div className="sticky top-0 z-20 overflow-hidden pt-6 pb-10 px-4 bg-[#F5D98A]">
                 <div className="absolute inset-0 pointer-events-none">
@@ -107,13 +115,13 @@ export default function Collections() {
                         <div>
                             <p className="text-xs text-gray-800/70">Vencidos</p>
                             <p className="text-xl font-bold text-gray-900">
-                                {formatCOP(grouped.overdue.reduce((s, l) => s + (l.interest_amount || 0), 0))}
+                                {formatCOP(grouped.overdue.reduce((s, l) => s + l.interestDue, 0))}
                             </p>
                         </div>
                         <div className="text-right">
                             <p className="text-xs text-gray-800/70">Próximos 7 días</p>
                             <p className="text-xl font-bold text-gray-900">
-                                {formatCOP(grouped.soon.reduce((s, l) => s + (l.interest_amount || 0), 0))}
+                                {formatCOP(grouped.soon.reduce((s, l) => s + l.interestDue, 0))}
                             </p>
                         </div>
                     </div>
@@ -124,7 +132,7 @@ export default function Collections() {
                     </svg>
                 </div>
 
-                <div className="absolute bottom-0 left-0 right-0 h-8 bg-[#f3f4f6] dark:bg-gray-900 rounded-t-[2rem] shadow-[0_-15px_35px_-5px_rgba(0,0,0,0.25)] dark:shadow-[0_-15px_35px_-5px_rgba(0,0,0,0.6)]" />
+                <div className="absolute bottom-0 left-0 right-0 h-8 bg-[#f3f4f6] dark:bg-gray-950 rounded-t-[2rem] shadow-[0_-15px_35px_-5px_rgba(0,0,0,0.25)] dark:shadow-[0_-15px_35px_-5px_rgba(0,0,0,0.6)]" />
             </div>
 
             <div className="px-4 pt-4">
@@ -193,7 +201,7 @@ function CollectionCard({ loan, cfg, onPress }) {
                             <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 shrink-0">Acuerdo</span>
                         )}
                     </div>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{formatCOP(loan.interest_amount)} / cuota · {loan.frequency}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{formatCOP(loan.interestDue)}{loan.periods > 1 ? ` (${loan.periods} períodos)` : ' / cuota'} · {loan.frequency}</p>
                     <p className="text-xs text-gray-400 dark:text-gray-500">
                         Próximo pago: {loan.nextPayment ? loan.nextPayment.toLocaleDateString('es-CO') : '—'}
                     </p>

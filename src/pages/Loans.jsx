@@ -201,7 +201,7 @@ export default function Loans() {
   });
 
   return (
-    <div className="pb-24 bg-[#f3f4f6]">
+    <div className="pb-24 bg-[#f3f4f6] dark:bg-gray-950">
       {/* Hero lila */}
       <div className="sticky top-0 z-20 pt-6 pb-10 px-4 bg-[#C9A8E8] border-t border-white/20">
         <div className="absolute inset-0 pointer-events-none overflow-hidden rounded-b-[2rem]">
@@ -290,7 +290,7 @@ export default function Loans() {
           </button>
         </div>
 
-        <div className="absolute bottom-0 left-0 right-0 h-8 bg-[#f3f4f6] dark:bg-gray-900 rounded-t-[2rem] shadow-[0_-15px_35px_-5px_rgba(0,0,0,0.25)] dark:shadow-[0_-15px_35px_-5px_rgba(0,0,0,0.6)]" />
+        <div className="absolute bottom-0 left-0 right-0 h-8 bg-[#f3f4f6] dark:bg-gray-950 rounded-t-[2rem] shadow-[0_-15px_35px_-5px_rgba(0,0,0,0.25)] dark:shadow-[0_-15px_35px_-5px_rgba(0,0,0,0.6)]" />
       </div>
 
       {/* Lista */}

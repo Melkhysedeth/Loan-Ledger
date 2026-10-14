@@ -216,15 +216,37 @@ export default function PaymentScreen() {
             total_paid: isLast
               ? interestToApply - (interestPerPeriod * (periodsToSettle - 1)) + capitalNum
               : interestPerPeriod,
-            interest_paid: interestPerPeriod,
+            // La última fila absorbe el redondeo para que el interés total sea exacto.
+            interest_paid: isLast ? interestToApply - interestPerPeriod * (periodsToSettle - 1) : interestPerPeriod,
             capital_paid: isLast ? capitalNum : 0,
             late: mora.inMora,
             notes: isLast
               ? [`Liquidación de ${periodsToSettle} períodos de interés en mora.`, notes || null].filter(Boolean).join(' ')
               : 'Período de interés en mora (liquidado junto con otros).',
             payment_method: isSingle ? activeMethods[0][0] : null,
-            method_breakdown: isSingle ? null : Object.fromEntries(activeMethods),
+            method_breakdown: null,
             reference: reference || null,
+          })
+        }
+
+        // Pago dividido en varios métodos: el desglose se reparte entre las filas en proporción a su
+        // total. Si cada fila llevara el desglose completo, el capital por método se contaría varias veces.
+        if (!isSingle) {
+          const pending = Object.fromEntries(activeMethods)
+          rows.forEach((row, i) => {
+            const breakdown = {}
+            if (i === rows.length - 1) {
+              Object.assign(breakdown, pending)
+            } else {
+              let assigned = 0
+              for (const [m, amt] of activeMethods) {
+                breakdown[m] = Math.round((amt * row.total_paid) / total)
+                assigned += breakdown[m]
+              }
+              breakdown[activeMethods[0][0]] += row.total_paid - assigned // cuadra la fila exacta
+              for (const m of Object.keys(breakdown)) pending[m] -= breakdown[m]
+            }
+            row.method_breakdown = breakdown
           })
         }
       } else {

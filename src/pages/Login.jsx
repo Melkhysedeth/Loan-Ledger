@@ -20,7 +20,7 @@ export default function Login() {
     }
 
     return (
-        <div className="min-h-screen bg-gray-50 flex flex-col">
+        <div className="min-h-screen bg-gray-50 dark:bg-gray-950 flex flex-col">
             {/* Header con degradado y ondas */}
             <div className="relative overflow-hidden pt-16 pb-20 px-6"
                 style={{ background: 'linear-gradient(135deg, #14b8a6 0%, #2563eb 100%)' }}>
@@ -45,36 +45,36 @@ export default function Login() {
             </div>
 
             {/* Card blanca */}
-            <div className="relative -mt-8 flex-1 bg-white rounded-t-[2rem] px-6 pt-8 pb-10">
+            <div className="relative -mt-8 flex-1 bg-white dark:bg-gray-900 rounded-t-[2rem] px-6 pt-8 pb-10">
                 <div className="w-full max-w-sm mx-auto">
-                    <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                    <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
                         Bienvenido nuevamente <span>👋</span>
                     </h2>
                     <p className="text-sm text-gray-400 mt-1 mb-6">Inicia sesión para continuar</p>
 
                     <div className="space-y-3">
-                        <div className="flex items-center gap-3 bg-gray-50 border border-gray-200 rounded-2xl px-4 focus-within:ring-2 focus-within:ring-teal-500">
+                        <div className="flex items-center gap-3 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl px-4 focus-within:ring-2 focus-within:ring-teal-500">
                             <Mail size={18} className="text-teal-600 shrink-0" />
-                            <div className="w-px h-6 bg-gray-200 shrink-0" />
+                            <div className="w-px h-6 bg-gray-200 dark:bg-gray-700 shrink-0" />
                             <input
                                 type="email"
                                 placeholder="Correo electrónico"
                                 value={email}
                                 onChange={e => setEmail(e.target.value)}
-                                className="w-full bg-transparent py-3 text-gray-900 placeholder-gray-400 focus:outline-none"
+                                className="w-full bg-transparent py-3 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none"
                             />
                         </div>
 
-                        <div className="flex items-center gap-3 bg-gray-50 border border-gray-200 rounded-2xl px-4 focus-within:ring-2 focus-within:ring-teal-500">
+                        <div className="flex items-center gap-3 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl px-4 focus-within:ring-2 focus-within:ring-teal-500">
                             <Lock size={18} className="text-teal-600 shrink-0" />
-                            <div className="w-px h-6 bg-gray-200 shrink-0" />
+                            <div className="w-px h-6 bg-gray-200 dark:bg-gray-700 shrink-0" />
                             <input
                                 type={showPassword ? 'text' : 'password'}
                                 placeholder="Contraseña"
                                 value={password}
                                 onChange={e => setPassword(e.target.value)}
                                 onKeyDown={e => e.key === 'Enter' && handleLogin()}
-                                className="w-full bg-transparent py-3 text-gray-900 placeholder-gray-400 focus:outline-none"
+                                className="w-full bg-transparent py-3 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none"
                             />
                             <button
                                 type="button"
@@ -91,15 +91,15 @@ export default function Login() {
                                 onClick={() => setRemember(v => !v)}
                                 className="flex items-center gap-2"
                             >
-                                <span className={`w-5 h-5 rounded-md flex items-center justify-center transition ${remember ? 'bg-teal-500' : 'bg-gray-200'}`}>
+                                <span className={`w-5 h-5 rounded-md flex items-center justify-center transition ${remember ? 'bg-teal-500' : 'bg-gray-200 dark:bg-gray-700'}`}>
                                     {remember && <Check size={13} color="white" strokeWidth={3} />}
                                 </span>
-                                <span className="text-sm text-gray-600">Recordar sesión</span>
+                                <span className="text-sm text-gray-600 dark:text-gray-300">Recordar sesión</span>
                             </button>
 
                             <button
                                 onClick={() => setShowReset(true)}
-                                className="text-sm text-blue-600 font-medium"
+                                className="text-sm text-blue-600 dark:text-blue-400 font-medium"
                             >
                                 ¿Olvidaste tu contraseña?
                             </button>
@@ -121,12 +121,12 @@ export default function Login() {
                         </button>
                     </div>
 
-                    <div className="flex items-center gap-3 mt-8 bg-teal-50 rounded-2xl p-3">
-                        <div className="w-9 h-9 rounded-full bg-teal-100 flex items-center justify-center shrink-0">
+                    <div className="flex items-center gap-3 mt-8 bg-teal-50 dark:bg-teal-900/20 rounded-2xl p-3">
+                        <div className="w-9 h-9 rounded-full bg-teal-100 dark:bg-teal-900/40 flex items-center justify-center shrink-0">
                             <ShieldCheck size={16} className="text-teal-600" />
                         </div>
                         <div>
-                            <p className="text-sm font-medium text-gray-700">Tus datos están protegidos</p>
+                            <p className="text-sm font-medium text-gray-700 dark:text-gray-200">Tus datos están protegidos</p>
                             <p className="text-xs text-gray-400">Utilizamos cifrado de extremo a extremo</p>
                         </div>
                     </div>
@@ -163,9 +163,9 @@ function ForgotPasswordModal({ onClose }) {
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-6">
-            <div className="w-full max-w-sm bg-white rounded-3xl p-6">
+            <div className="w-full max-w-sm bg-white dark:bg-gray-900 rounded-3xl p-6">
                 <div className="flex justify-between items-center mb-4">
-                    <h2 className="font-bold text-gray-900 text-lg">Recuperar contraseña</h2>
+                    <h2 className="font-bold text-gray-900 dark:text-white text-lg">Recuperar contraseña</h2>
                     <button onClick={onClose}>
                         <X size={20} className="text-gray-400" />
                     </button>
@@ -173,7 +173,7 @@ function ForgotPasswordModal({ onClose }) {
 
                 {sent ? (
                     <div className="text-center py-4">
-                        <p className="text-sm text-gray-600">
+                        <p className="text-sm text-gray-600 dark:text-gray-300">
                             Te enviamos un correo a <span className="font-semibold">{email}</span> con
                             un enlace para restablecer tu contraseña.
                         </p>
@@ -186,7 +186,7 @@ function ForgotPasswordModal({ onClose }) {
                     </div>
                 ) : (
                     <div className="space-y-3">
-                        <p className="text-sm text-gray-500">
+                        <p className="text-sm text-gray-500 dark:text-gray-400">
                             Escribe tu correo y te enviaremos un enlace para restablecer tu contraseña.
                         </p>
                         <input
@@ -195,7 +195,7 @@ function ForgotPasswordModal({ onClose }) {
                             value={email}
                             onChange={e => setEmail(e.target.value)}
                             onKeyDown={e => e.key === 'Enter' && handleSend()}
-                            className="w-full bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl px-4 py-3 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                         />
                         {error && <p className="text-sm text-red-500 text-center">{error}</p>}
                         <button

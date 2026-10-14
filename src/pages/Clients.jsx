@@ -133,7 +133,7 @@ export default function Clients() {
   })
 
   return (
-    <div className="p-4 pb-24 bg-[#f3f4f6]">
+    <div className="p-4 pb-24 bg-[#f3f4f6] dark:bg-gray-950">
       {/* Hero magenta */}
       <div className="sticky top-0 z-20 overflow-hidden -mx-4 -mt-4 px-4 pt-6 pb-10 bg-[#eeaade]">
         <div className="absolute inset-0 pointer-events-none">
@@ -228,11 +228,11 @@ export default function Clients() {
             <UserPlus size={18} /> Nuevo cliente
           </button>
         </div>
-        <div className="absolute bottom-0 left-0 right-0 h-8 bg-[#f3f4f6] dark:bg-gray-900 rounded-t-[2rem] shadow-[0_-15px_35px_-5px_rgba(0,0,0,0.25)] dark:shadow-[0_-15px_35px_-5px_rgba(0,0,0,0.6)]" />
+        <div className="absolute bottom-0 left-0 right-0 h-8 bg-[#f3f4f6] dark:bg-gray-950 rounded-t-[2rem] shadow-[0_-15px_35px_-5px_rgba(0,0,0,0.25)] dark:shadow-[0_-15px_35px_-5px_rgba(0,0,0,0.6)]" />
       </div>
 
       {/* Contenido blanco */}
-      <div className="bg-[#f3f4f6] dark:bg-gray-900 rounded-t-[1.8rem] pt-4 -mx-4 px-4 relative z-10">
+      <div className="bg-[#f3f4f6] dark:bg-gray-950 rounded-t-[1.8rem] pt-4 -mx-4 px-4 relative z-10">
 
         {loading && <p className="text-center text-gray-400 mt-10">Cargando...</p>}
 

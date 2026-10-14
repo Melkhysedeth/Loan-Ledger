@@ -33,15 +33,15 @@ export default function ResetPassword() {
     }
 
     return (
-        <div className="min-h-screen bg-gray-50 flex items-center justify-center px-6">
+        <div className="min-h-screen bg-gray-50 dark:bg-gray-950 flex items-center justify-center px-6">
             <div className="w-full max-w-sm">
                 <div className="text-center mb-8">
                     <div className="w-16 h-16 rounded-2xl mx-auto mb-4 flex items-center justify-center"
                         style={{ background: 'linear-gradient(135deg, #3b5bdb 0%, #7048e8 100%)' }}>
                         <CreditCard size={28} color="white" strokeWidth={2} />
                     </div>
-                    <h1 className="text-2xl font-bold text-gray-900">Nueva contraseña</h1>
-                    <p className="text-sm text-gray-500 mt-1">Escribe tu nueva contraseña</p>
+                    <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Nueva contraseña</h1>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Escribe tu nueva contraseña</p>
                 </div>
 
                 {done ? (
@@ -55,7 +55,7 @@ export default function ResetPassword() {
                             placeholder="Nueva contraseña"
                             value={password}
                             onChange={e => setPassword(e.target.value)}
-                            className="w-full bg-white border border-gray-200 rounded-2xl px-4 py-3 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl px-4 py-3 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                         />
                         <input
                             type="password"
@@ -63,7 +63,7 @@ export default function ResetPassword() {
                             value={confirmPassword}
                             onChange={e => setConfirmPassword(e.target.value)}
                             onKeyDown={e => e.key === 'Enter' && handleUpdate()}
-                            className="w-full bg-white border border-gray-200 rounded-2xl px-4 py-3 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl px-4 py-3 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                         />
                         {error && <p className="text-sm text-red-500 text-center">{error}</p>}
                         <button
