@@ -3,6 +3,11 @@ export function formatCOP(value) {
   return '$ ' + Number(value).toLocaleString('es-CO')
 }
 
+// Fecha de hoy (o la dada) como YYYY-MM-DD en hora local, sin pasar por UTC.
+export function localDateString(d = new Date()) {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 // Fechas YYYY-MM-DD (o ISO) a texto local. Se fija el mediodía para que la
 // zona horaria no corra la fecha un día.
 export function formatDate(value, options) {

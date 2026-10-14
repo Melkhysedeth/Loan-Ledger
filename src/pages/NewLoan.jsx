@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../db/supabase'
-import { formatCOP, parseCOP } from '../utils/format'
+import { formatCOP, parseCOP, localDateString } from '../utils/format'
 import { calcInterest } from '../utils/loanCalc'
 import { useFormPersist } from '../hooks/useFormPersist'
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom'
@@ -9,6 +9,9 @@ import { useWalletBalances } from '../hooks/useWalletBalances'
 import PageHero, { HeroOverlap } from '../components/ui/PageHero'
 import ConfirmWhatsAppModal from '../components/ConfirmWhatsAppModal'
 import { mensajeDesembolso } from '../utils/whatsappMessages'
+import { AlertCircle } from 'lucide-react'
+import Banner from '../components/ui/Banner'
+import { activePayments, loanCapitalPaid } from '../utils/loanMetrics'
 
 const initialLoan = {
     amount: '', rate: '', frequency: 'mensual',
@@ -34,8 +37,10 @@ export default function NewLoan() {
     const [loan, setLoan] = useState(initialLoan)
     const [saving, setSaving] = useState(false)
     const [methodAmounts, setMethodAmounts] = useState({ efectivo: '', nequi: '', breb: '' })
-    // Saldo de cada billetera para no desembolsar más de lo que hay (no aplica al editar)
-    const { balances, refresh: refreshBalances } = useWalletBalances(!isEditing)
+    // Solo al editar: desglose actual por billetera, pagos ya hechos y cómo aplicar el interés nuevo
+    const [originalDisb, setOriginalDisb] = useState([])
+    const [paymentsInfo, setPaymentsInfo] = useState({ count: 0, capitalPaid: 0 })
+    const [fromToday, setFromToday] = useState(true)
 
     // Modal de confirmación de envío de WhatsApp tras desembolsar
     const [waModal, setWaModal] = useState({ open: false, phone: '', message: '' })
@@ -44,6 +49,21 @@ export default function NewLoan() {
     const rate = parseFloat(loan.rate) || 0
     // No hay cuotas fijas: el interés se genera cada período mientras haya capital pendiente.
     const interestPerPeriod = amount && rate ? calcInterest(amount, rate, loan.frequency) : null
+
+    // Edición: ¿cambió el monto? ¿cambiaron las condiciones de interés?
+    const amountChanged = isEditing && amount > 0 && amount !== editLoan.amount
+    // Un préstamo unificado no mueve dinero de las billeteras: al cambiar el monto no se toca el desglose.
+    const needsDisbursement = amountChanged && !editLoan.is_unification
+    const interestChanged = isEditing && (
+        amountChanged
+        || rate !== Number(editLoan.interest_rate)
+        || loan.interestType !== (editLoan.interest_type || 'fixed')
+        || loan.frequency !== editLoan.frequency
+    )
+
+    // Saldo de cada billetera para no desembolsar más de lo que hay. Al editar se calcula como si
+    // este préstamo no existiera, así lo que ya sacó de cada billetera cuenta como disponible.
+    const { balances, refresh: refreshBalances } = useWalletBalances(!isEditing || needsDisbursement, editLoan?.id ?? null)
 
     // Persistir campos del préstamo
     const { clearPersisted: clearLoanForm } = useFormPersist(
@@ -76,8 +96,15 @@ export default function NewLoan() {
             interestType: editLoan.interest_type || 'fixed',
         })
 
+        supabase.from('payments').select('capital_paid, voided').eq('loan_id', editLoan.id)
+            .then(({ data }) => {
+                const valid = activePayments(data || [])
+                setPaymentsInfo({ count: valid.length, capitalPaid: loanCapitalPaid(editLoan, valid) })
+            })
+
         supabase.from('loan_disbursements').select('*').eq('loan_id', editLoan.id)
             .then(({ data }) => {
+                setOriginalDisb(data || [])
                 if (data && data.length > 0) {
                     const amounts = { efectivo: '', nequi: '', breb: '' }
                     data.forEach(d => { amounts[d.payment_method] = formatCOP(d.amount) })
@@ -169,8 +196,22 @@ export default function NewLoan() {
             return
         }
 
+        // El nuevo monto no puede dejar el préstamo sin capital pendiente. Se consulta el capital pagado
+        // en este momento (no el que había al abrir la pantalla).
+        if (amountChanged) {
+            const { data: pays, error: paysError } = await supabase
+                .from('payments').select('capital_paid, voided').eq('loan_id', editLoan.id)
+            if (paysError) { alert(`No se pudieron verificar los pagos del préstamo: ${paysError.message}`); return }
+            const capitalPaid = loanCapitalPaid(editLoan, activePayments(pays || []))
+            if (amount <= capitalPaid) {
+                alert(`El monto no puede ser menor o igual al capital ya pagado (${formatCOP(capitalPaid)}). Para cerrar el préstamo usa "Liquidar".`)
+                return
+            }
+        }
+
+        // Préstamo nuevo, o edición donde cambió el monto: hay que definir de qué billeteras sale el dinero.
         let activeMethods = []
-        if (!isEditing) {
+        if (!isEditing || needsDisbursement) {
             activeMethods = Object.entries(methodAmounts)
                 .map(([m, v]) => [m, parseCOP(v) || 0])
                 .filter(([, v]) => v > 0)
@@ -188,7 +229,8 @@ export default function NewLoan() {
                 const over = activeMethods.filter(([m, v]) => fresh[m]?.tracked && v > fresh[m].balance)
                 if (over.length > 0) {
                     const label = (m) => METHODS.find(x => x.id === m)?.label || m
-                    const lines = over.map(([m, v]) => `${label(m)}: desembolsas ${formatCOP(v)} y hay ${formatCOP(fresh[m].balance)}`)
+                    const verb = isEditing ? 'el préstamo necesita' : 'desembolsas'
+                    const lines = over.map(([m, v]) => `${label(m)}: ${verb} ${formatCOP(v)} y hay ${formatCOP(fresh[m].balance)}`)
                     alert('Saldo insuficiente:\n' + lines.join('\n'))
                     return
                 }
@@ -198,6 +240,11 @@ export default function NewLoan() {
         setSaving(true)
         try {
             const isSingle = activeMethods.length === 1
+            const today = localDateString()
+            // Si cambió el monto queda constancia en las notas del préstamo.
+            const amountNote = amountChanged
+                ? `[Monto corregido de ${formatCOP(editLoan.amount)} a ${formatCOP(amount)} el ${today}]`
+                : null
             const payload = {
                 client_id: selectedClient.id,
                 interest_type: loan.interestType,
@@ -207,15 +254,41 @@ export default function NewLoan() {
                 frequency: loan.frequency,
                 start_date: loan.startDate,
                 first_payment_date: loan.firstPaymentDate || null,
-                notes: loan.notes,
-                ...(!isEditing && { payment_method: isSingle ? activeMethods[0][0] : null }),
+                notes: [loan.notes, amountNote].filter(Boolean).join('\n'),
+                ...((!isEditing || needsDisbursement) && { payment_method: isSingle ? activeMethods[0][0] : null }),
+                // "Solo hacia adelante": los pagos anteriores a esta fecha no se comparan con el interés nuevo.
+                ...(isEditing && interestChanged && paymentsInfo.count > 0 && fromToday && { interest_effective_date: today }),
             }
 
             if (isEditing) {
+                // Valores actuales de lo que se va a modificar, por si hay que deshacer.
+                const restore = Object.fromEntries(Object.keys(payload).map(k => [k, editLoan[k] ?? null]))
+                const undoLoan = () => supabase.from('loans').update(restore).eq('id', editLoan.id)
+
                 const { error } = await supabase.from('loans').update(payload).eq('id', editLoan.id)
                 if (error) { alert(`No se pudo guardar el préstamo: ${error.message}`); return }
-                // No se toca loan_disbursements: el desembolso ya ocurrió y no se vuelve a pedir.
-                // Tampoco se ofrece WhatsApp: una edición no es un nuevo desembolso.
+
+                if (needsDisbursement) {
+                    // Se reemplaza el desglose por billetera. Si algo falla, se vuelve al desglose y los valores anteriores.
+                    const oldRows = originalDisb.map(({ loan_id, payment_method, amount: amt }) => ({ loan_id, payment_method, amount: amt }))
+                    const newRows = activeMethods.map(([m, amt]) => ({ loan_id: editLoan.id, payment_method: m, amount: amt }))
+
+                    const { error: delError } = await supabase.from('loan_disbursements').delete().eq('loan_id', editLoan.id)
+                    if (delError) {
+                        await undoLoan()
+                        alert(`No se pudo actualizar el desembolso, no se guardó nada: ${delError.message}`)
+                        return
+                    }
+                    const { error: insError } = await supabase.from('loan_disbursements').insert(newRows)
+                    if (insError) {
+                        if (oldRows.length > 0) await supabase.from('loan_disbursements').insert(oldRows)
+                        await undoLoan()
+                        alert(`No se pudo guardar el nuevo desembolso, el préstamo quedó como estaba: ${insError.message}`)
+                        return
+                    }
+                }
+
+                // Una edición no es un nuevo desembolso: no se ofrece WhatsApp.
                 clearAll()
                 navigate('/loans')
                 return
@@ -315,6 +388,22 @@ export default function NewLoan() {
                                     value={loan.amount} onChange={handleAmountChange} placeholder="$ 0" inputMode="numeric"
                                 />
                             </div>
+                            {amountChanged && (
+                                <Banner tone="amber" Icon={AlertCircle} title="Estás corrigiendo el monto">
+                                    <p>
+                                        De {formatCOP(editLoan.amount)} a {formatCOP(amount)}
+                                        {' '}({amount > editLoan.amount ? '+' : '-'}{formatCOP(Math.abs(amount - editLoan.amount))}).
+                                    </p>
+                                    <p>
+                                        {needsDisbursement
+                                            ? 'Indica abajo de qué billeteras sale ahora el monto completo.'
+                                            : 'Es un préstamo unificado: no mueve dinero de las billeteras.'}
+                                    </p>
+                                    {paymentsInfo.capitalPaid > 0 && (
+                                        <p>Capital ya pagado: {formatCOP(paymentsInfo.capitalPaid)}. El nuevo monto debe ser mayor.</p>
+                                    )}
+                                </Banner>
+                            )}
                             <Field label="Tasa de interés % *" name="rate" value={loan.rate} onChange={handleLoanChange} placeholder="Ej: 10" type="number" />
                             <div>
                                 <label className="text-sm text-gray-500 dark:text-gray-400 mb-1 block">Tipo de interés</label>
@@ -342,10 +431,14 @@ export default function NewLoan() {
                                 </div>
                             </div>
                             <div>
-                                {!isEditing && (
+                                {(!isEditing || needsDisbursement) && (
                                     <div>
                                         <label className="text-sm text-gray-500 dark:text-gray-400 mb-1 block">Método de desembolso</label>
-                                        <p className="text-xs text-gray-400 mb-2">Si el préstamo salió de varios métodos, escribe cuánto por cada uno.</p>
+                                        <p className="text-xs text-gray-400 mb-2">
+                                            {isEditing
+                                                ? 'Ya viene con lo que tenía el préstamo: ajusta solo lo que cambió. El saldo disponible cuenta como libre lo que este préstamo ya había sacado.'
+                                                : 'Si el préstamo salió de varios métodos, escribe cuánto por cada uno.'}
+                                        </p>
                                         <div className="space-y-2.5">
                                             {METHODS.map(m => {
                                                 const wallet = balances?.[m.id]
@@ -428,6 +521,40 @@ export default function NewLoan() {
                             <Field label="Notas del préstamo" name="notes" value={loan.notes} onChange={handleLoanChange} placeholder="Condiciones especiales..." textarea />
                         </div>
                     </section>
+
+                    {isEditing && interestChanged && paymentsInfo.count > 0 && (
+                        <section className="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm mb-4">
+                            <h2 className="font-semibold text-gray-500 dark:text-gray-400 mb-1 text-sm uppercase tracking-wide">Pagos anteriores</h2>
+                            <p className="text-xs text-gray-400 mb-3">
+                                Este préstamo ya tiene {paymentsInfo.count} pago{paymentsInfo.count !== 1 ? 's' : ''}. ¿Cómo aplicar el interés nuevo?
+                            </p>
+                            <div className="space-y-2">
+                                {[
+                                    { value: true, title: 'Solo hacia adelante (recomendado)', desc: 'Los pagos ya hechos quedan como válidos, sin saldo de interés pendiente por la diferencia.' },
+                                    { value: false, title: 'También a los pagos anteriores', desc: 'Se recalcula como si el interés siempre hubiera sido este. Puede aparecer saldo de interés pendiente o a favor.' },
+                                ].map(opt => (
+                                    <label
+                                        key={String(opt.value)}
+                                        className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition ${fromToday === opt.value
+                                            ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+                                            : 'border-gray-200 dark:border-gray-700'}`}
+                                    >
+                                        <input
+                                            type="radio"
+                                            name="interestFrom"
+                                            checked={fromToday === opt.value}
+                                            onChange={() => setFromToday(opt.value)}
+                                            className="mt-0.5 accent-blue-600"
+                                        />
+                                        <div>
+                                            <p className="text-sm font-semibold text-gray-800 dark:text-gray-100">{opt.title}</p>
+                                            <p className="text-xs text-gray-400 mt-0.5">{opt.desc}</p>
+                                        </div>
+                                    </label>
+                                ))}
+                            </div>
+                        </section>
+                    )}
 
                     {interestPerPeriod !== null && (
                         <section className="bg-blue-50 dark:bg-blue-900/20 rounded-2xl p-4 mb-4 border border-blue-200 dark:border-blue-800/40">
