@@ -5,6 +5,7 @@ import { calcInterest } from '../utils/loanCalc'
 import { useFormPersist } from '../hooks/useFormPersist'
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom'
 import { METHODS } from '../constants/paymentMethods'
+import { useWalletBalances } from '../hooks/useWalletBalances'
 import PageHero, { HeroOverlap } from '../components/ui/PageHero'
 import ConfirmWhatsAppModal from '../components/ConfirmWhatsAppModal'
 import { mensajeDesembolso } from '../utils/whatsappMessages'
@@ -33,6 +34,8 @@ export default function NewLoan() {
     const [loan, setLoan] = useState(initialLoan)
     const [saving, setSaving] = useState(false)
     const [methodAmounts, setMethodAmounts] = useState({ efectivo: '', nequi: '', breb: '' })
+    // Saldo de cada billetera para no desembolsar más de lo que hay (no aplica al editar)
+    const { balances, refresh: refreshBalances } = useWalletBalances(!isEditing)
 
     // Modal de confirmación de envío de WhatsApp tras desembolsar
     const [waModal, setWaModal] = useState({ open: false, phone: '', message: '' })
@@ -175,6 +178,20 @@ export default function NewLoan() {
             if (sumMethods !== amount) {
                 alert('Los métodos de desembolso no suman el monto del préstamo.')
                 return
+            }
+
+            // Se recalculan los saldos justo ahora, por si cambiaron desde que se abrió la pantalla.
+            const fresh = await refreshBalances()
+            if (!fresh) {
+                if (!confirm('No se pudieron verificar los saldos de las billeteras. ¿Guardar de todos modos?')) return
+            } else {
+                const over = activeMethods.filter(([m, v]) => fresh[m]?.tracked && v > fresh[m].balance)
+                if (over.length > 0) {
+                    const label = (m) => METHODS.find(x => x.id === m)?.label || m
+                    const lines = over.map(([m, v]) => `${label(m)}: desembolsas ${formatCOP(v)} y hay ${formatCOP(fresh[m].balance)}`)
+                    alert('Saldo insuficiente:\n' + lines.join('\n'))
+                    return
+                }
             }
         }
 
@@ -329,27 +346,61 @@ export default function NewLoan() {
                                     <div>
                                         <label className="text-sm text-gray-500 dark:text-gray-400 mb-1 block">Método de desembolso</label>
                                         <p className="text-xs text-gray-400 mb-2">Si el préstamo salió de varios métodos, escribe cuánto por cada uno.</p>
-                                        <div className="space-y-2">
-                                            {METHODS.map(m => (
-                                                <div key={m.id} className="flex items-center gap-3">
-                                                    <div className="w-9 h-9 flex items-center justify-center rounded-xl bg-gray-50 dark:bg-gray-700 text-gray-500 dark:text-gray-300 shrink-0">
-                                                        {m.icon}
+                                        <div className="space-y-2.5">
+                                            {METHODS.map(m => {
+                                                const wallet = balances?.[m.id]
+                                                const assigned = parseCOP(methodAmounts[m.id]) || 0
+                                                const exceeds = !!wallet?.tracked && assigned > wallet.balance
+                                                const othersAssigned = Object.entries(methodAmounts)
+                                                    .reduce((sum, [k, v]) => (k === m.id ? sum : sum + (parseCOP(v) || 0)), 0)
+                                                // Sugerencia: lo que falta por asignar, sin pasar del saldo de esta billetera
+                                                const suggestion = Math.max(0, Math.min(
+                                                    wallet?.tracked ? wallet.balance : Infinity,
+                                                    amount - othersAssigned,
+                                                ))
+                                                return (
+                                                    <div key={m.id}>
+                                                        <div className="flex items-center gap-3">
+                                                            <div className="w-9 h-9 flex items-center justify-center rounded-xl bg-gray-50 dark:bg-gray-700 text-gray-500 dark:text-gray-300 shrink-0">
+                                                                {m.icon}
+                                                            </div>
+                                                            <div className="w-24 shrink-0">
+                                                                <p className="text-sm text-gray-600 dark:text-gray-300 leading-tight">{m.label}</p>
+                                                                <p className={`text-[11px] leading-tight ${exceeds ? 'text-red-500' : 'text-gray-400'}`}>
+                                                                    {!balances
+                                                                        ? 'Cargando saldo...'
+                                                                        : wallet.tracked
+                                                                            ? `Disp. ${formatCOP(wallet.balance)}`
+                                                                            : 'Sin saldo registrado'}
+                                                                </p>
+                                                            </div>
+                                                            <input
+                                                                className={`flex-1 min-w-0 border bg-white dark:bg-gray-900 rounded-xl px-3 py-2 text-gray-800 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 text-sm ${exceeds ? 'border-red-400 focus:ring-red-500' : 'border-gray-200 dark:border-gray-700 focus:ring-blue-500'}`}
+                                                                placeholder="$ 0"
+                                                                inputMode="numeric"
+                                                                value={methodAmounts[m.id]}
+                                                                onChange={(e) => {
+                                                                    const raw = parseCOP(e.target.value)
+                                                                    setMethodAmounts({ ...methodAmounts, [m.id]: raw ? formatCOP(raw) : '' })
+                                                                }}
+                                                            />
+                                                            <button
+                                                                type="button"
+                                                                disabled={suggestion <= 0 || suggestion === assigned}
+                                                                onClick={() => setMethodAmounts({ ...methodAmounts, [m.id]: formatCOP(suggestion) })}
+                                                                className="text-xs font-semibold px-2.5 py-2 rounded-xl bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 disabled:opacity-40 active:scale-95 transition shrink-0"
+                                                            >
+                                                                Usar
+                                                            </button>
+                                                        </div>
+                                                        {exceeds && (
+                                                            <p className="text-xs text-red-500 mt-1 ml-12">
+                                                                Excede el saldo de {m.label} por {formatCOP(assigned - wallet.balance)}
+                                                            </p>
+                                                        )}
                                                     </div>
-                                                    <span className="text-sm text-gray-600 dark:text-gray-300 w-16 shrink-0">
-                                                        {m.label}
-                                                    </span>
-                                                    <input
-                                                        className="flex-1 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 rounded-xl px-3 py-2 text-gray-800 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                                                        placeholder="$ 0"
-                                                        inputMode="numeric"
-                                                        value={methodAmounts[m.id]}
-                                                        onChange={(e) => {
-                                                            const raw = parseCOP(e.target.value)
-                                                            setMethodAmounts({ ...methodAmounts, [m.id]: raw ? formatCOP(raw) : '' })
-                                                        }}
-                                                    />
-                                                </div>
-                                            ))}
+                                                )
+                                            })}
                                         </div>
                                         {(() => {
                                             const sum = Object.values(methodAmounts).reduce((s, v) => s + (parseCOP(v) || 0), 0)
