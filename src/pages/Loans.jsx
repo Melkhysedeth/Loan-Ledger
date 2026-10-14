@@ -3,6 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "../db/supabase";
 import { formatCOP } from "../utils/format";
 import { calcNextPaymentDate, classifyLoan } from "../utils/loanCalc";
+import { installmentsMade, groupBy } from "../utils/loanMetrics";
+import { totalLentOf, pendingOf, pendingBalanceOf } from "../utils/accounting";
 import {
   Search,
   AlertCircle,
@@ -61,7 +63,7 @@ export default function Loans() {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("active");
   const [loading, setLoading] = useState(true);
-  const [totalWithdrawn, setTotalWithdrawn] = useState(0);
+  const [withdrawals, setWithdrawals] = useState([]);
 
   useEffect(() => {
     loadLoans();
@@ -80,7 +82,7 @@ export default function Loans() {
         supabase.from("capital_withdrawals").select("amount, is_transfer"),
       ]);
 
-    setTotalWithdrawn((withdrawals || []).filter(w => !w.is_transfer).reduce((s, w) => s + (w.amount || 0), 0));
+    setWithdrawals(withdrawals || []);
 
     const loansList = allLoans || [];
     const paymentsList = allPayments || [];
@@ -88,9 +90,9 @@ export default function Loans() {
     // FIX: detectar préstamos que pasan de 'active' a 'overdue' (vencidos)
     const toMarkOverdue = loansList.filter((loan) => {
       if (loan.status !== "active") return false;
-      const paymentsMade = paymentsList.filter(
-        (p) => p.loan_id === loan.id,
-      ).length;
+      const paymentsMade = installmentsMade(
+        paymentsList.filter((p) => p.loan_id === loan.id),
+      );
       const classification = classifyLoan(
         loan.first_payment_date,
         loan.frequency,
@@ -104,9 +106,9 @@ export default function Loans() {
     // Sin esto, el status quedaba pegado en 'overdue' para siempre.
     const toMarkActive = loansList.filter((loan) => {
       if (loan.status !== "overdue") return false;
-      const paymentsMade = paymentsList.filter(
-        (p) => p.loan_id === loan.id,
-      ).length;
+      const paymentsMade = installmentsMade(
+        paymentsList.filter((p) => p.loan_id === loan.id),
+      );
       const classification = classifyLoan(
         loan.first_payment_date,
         loan.frequency,
@@ -121,10 +123,8 @@ export default function Loans() {
     const toMarkPaid = loansList.filter((loan) => {
       if (!["active", "overdue", "agreement"].includes(loan.status))
         return false;
-      const capitalPaid = paymentsList
-        .filter((p) => p.loan_id === loan.id)
-        .reduce((s, p) => s + (p.capital_paid || 0), 0);
-      return loan.amount - capitalPaid <= 0;
+      // Sin pagos anulados y contando el capital inicial pagado.
+      return pendingOf(loan, paymentsList.filter((p) => p.loan_id === loan.id)) <= 0;
     });
 
     const needsUpdate =
@@ -186,13 +186,8 @@ export default function Loans() {
   const activeLoans = loans.filter((l) =>
     ["active", "overdue", "frozen", "agreement"].includes(l.status),
   );
-  const totalLent = activeLoans.reduce((s, l) => s + (l.amount || 0), 0) - totalWithdrawn;
-  const totalPending = activeLoans.reduce((s, l) => {
-    const paid = payments
-      .filter((p) => p.loan_id === l.id)
-      .reduce((a, p) => a + (p.capital_paid || 0), 0) + (l.initial_capital_paid || 0);
-    return s + (l.amount - paid);
-  }, 0);
+  const totalLent = totalLentOf(activeLoans, withdrawals);
+  const totalPending = pendingBalanceOf(activeLoans, groupBy(payments, "loan_id"));
   const overdueCount = loans.filter((l) => l.status === "overdue").length;
 
   const filtered = loans.filter((l) => {
@@ -349,7 +344,7 @@ function LoanCard({ loan, index, payments, onPress, onEdit, onDeleted, even }) {
 
   function handleDeleteRequest() {
     setMenuOpen(false);
-    if (paymentsMade > 0) {
+    if (payments.length > 0) {
       setBlockedOpen(true);
     } else {
       setConfirmOpen(true);
@@ -361,9 +356,8 @@ function LoanCard({ loan, index, payments, onPress, onEdit, onDeleted, even }) {
     setConfirmOpen(false);
   }
 
-  const paymentsMade = payments.length;
-  const capitalPaid = payments.reduce((s, p) => s + (p.capital_paid || 0), 0);
-  const pending = loan.amount - capitalPaid;
+  const paymentsMade = installmentsMade(payments);
+  const pending = pendingOf(loan, payments);
 
   const nextPayment = calcNextPaymentDate(
     loan.first_payment_date,
@@ -455,12 +449,8 @@ function LoanCard({ loan, index, payments, onPress, onEdit, onDeleted, even }) {
             </p>
           </div>
           <div>
-            <p className="text-[10px] text-gray-400">Cuotas</p>
-            <p className="text-xs font-bold text-gray-800 dark:text-gray-100">
-              {loan.num_payments
-                ? `${paymentsMade} / ${loan.num_payments}`
-                : `${paymentsMade} pagos`}
-            </p>
+            <p className="text-[10px] text-gray-400">Cuotas pagadas</p>
+            <p className="text-xs font-bold text-gray-800 dark:text-gray-100">{paymentsMade}</p>
           </div>
         </div>
       </button>

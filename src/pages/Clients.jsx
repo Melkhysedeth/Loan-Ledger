@@ -4,6 +4,8 @@ import { supabase } from '../db/supabase'
 import { formatCOP } from '../utils/format'
 import { calcRanking, RANKING_LABELS, RANKING_OPTIONS } from '../utils/ranking'
 import { calcNextPaymentDate, classifyLoan } from '../utils/loanCalc'
+import { activePayments, groupBy, installmentsMade } from '../utils/loanMetrics'
+import { pendingBalanceOf } from '../utils/accounting'
 import useLongPress from '../hooks/useLongPress'
 import ContextMenu from '../components/ContextMenu'
 import ConfirmModal from '../components/ConfirmModal'
@@ -65,30 +67,18 @@ export default function Clients() {
       const loans = (allLoans || []).filter(l => l.client_id === client.id)
       const activeLoans = loans.filter(l => ['active', 'agreement', 'overdue', 'frozen'].includes(l.status))
       const payments = (allPayments || []).filter(p => loans.some(l => l.id === p.loan_id))
+      const paymentsByLoan = groupBy(activePayments(payments), 'loan_id')
 
       const totalLoaned = activeLoans.reduce((sum, l) => sum + Number(l.amount || 0), 0)
-
-      const totalPaid = activeLoans.reduce((sum, l) => {
-        const paid = payments
-          .filter(p => p.loan_id === l.id)
-          .reduce((s, p) => s + Number(p.capital_paid || 0), 0)
-        return sum + paid
-      }, 0)
-
-      const totalPending = activeLoans.reduce((sum, l) => {
-        const paid = payments
-          .filter(p => p.loan_id === l.id)
-          .reduce((s, p) => s + Number(p.capital_paid || 0), 0) + Number(l.initial_capital_paid || 0)
-        return sum + (Number(l.amount || 0) - paid)
-      }, 0)
+      const totalPending = pendingBalanceOf(activeLoans, paymentsByLoan)
+      const totalPaid = totalLoaned - totalPending
 
       // ── Próximo pago / vencido desde: el peor estado entre préstamos activos ──
       let worstStatus = activeLoans.length === 0 ? 'none' : 'ok'
       let nextDate = null
 
       for (const l of activeLoans) {
-        const loanPayments = payments.filter(p => p.loan_id === l.id)
-        const paymentsMade = loanPayments.length
+        const paymentsMade = installmentsMade(paymentsByLoan.get(l.id))
         const next = calcNextPaymentDate(l.first_payment_date, l.frequency, paymentsMade)
         const cls = classifyLoan(l.first_payment_date, l.frequency, paymentsMade)
 
@@ -101,7 +91,7 @@ export default function Clients() {
         }
       }
 
-      const ranking = client.ranking_override || calcRanking(payments, loans)
+      const ranking = client.ranking_override || calcRanking(activePayments(payments), loans)
 
       return {
         ...client,

@@ -3,8 +3,9 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { supabase } from '../db/supabase'
 import { useFormPersist } from '../hooks/useFormPersist'
 import {
-  ChevronLeft, User, IdCard, MapPin, FileText, Info, ArrowRight, Save,
+  User, IdCard, MapPin, FileText, Info, ArrowRight, Save,
 } from 'lucide-react'
+import PageHero, { HeroOverlap } from '../components/ui/PageHero'
 
 const empty = { name: '', phone: '', cedula: '', address: '', notes: '' }
 
@@ -81,24 +82,16 @@ export default function NewClient() {
   }
 
   return (
-    <div className="p-4 pb-24 bg-gray-50 dark:bg-gray-900 min-h-screen">
-      {/* Header */}
-      <div className="flex items-center gap-3 mb-1">
-        <button onClick={() => { if (!isEditing) clearPersisted(); navigate(-1) }} className="text-blue-500 dark:text-blue-400">
-          <ChevronLeft size={26} />
-        </button>
-        <div>
-          <h1 className="text-2xl font-bold text-gray-800 dark:text-white">
-            {isEditing ? 'Editar cliente' : 'Nuevo cliente'}
-          </h1>
-          <p className="text-sm text-gray-400">
-            {isEditing ? 'Actualiza la información del cliente' : 'Completa la información del cliente'}
-          </p>
-        </div>
-      </div>
+    <div className="pb-24 bg-gray-50 dark:bg-gray-950 min-h-screen">
+      <PageHero
+        title={isEditing ? 'Editar cliente' : 'Nuevo cliente'}
+        subtitle={isEditing ? 'Actualiza la información del cliente' : 'Completa la información del cliente'}
+        onBack={() => { if (!isEditing) clearPersisted(); navigate(-1) }}
+      />
 
+      <HeroOverlap>
       {/* Card: Información personal */}
-      <section className="bg-white dark:bg-gray-800 rounded-2xl p-5 shadow-sm mt-5 space-y-4">
+      <section className="bg-white dark:bg-gray-800 rounded-2xl p-5 shadow-sm space-y-4">
         <div className="flex items-center gap-2 mb-1">
           <div className="w-9 h-9 rounded-full bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center">
             <User size={18} className="text-blue-500" />
@@ -136,7 +129,9 @@ export default function NewClient() {
           />
         </div>
       </section>
+      </HeroOverlap>
 
+      <div className="px-4">
       {/* Card: Información adicional */}
       <section className="bg-white dark:bg-gray-800 rounded-2xl p-5 shadow-sm mt-4 space-y-4">
         <div className="flex items-center gap-2 mb-1">
@@ -196,6 +191,7 @@ export default function NewClient() {
             : <>Crear cliente <ArrowRight size={18} /></>
         }
       </button>
+      </div>
     </div>
   )
 }

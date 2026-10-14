@@ -16,24 +16,6 @@ export function calcInterest(amount, ratePercent, frequency = 'mensual') {
     return Math.round((amount * ratePercent * factor) / 100)
 }
 
-/**
- * Totales del préstamo.
- * @param {number} amount
- * @param {number} ratePercent   - Tasa mensual
- * @param {number} numPayments   - Número de cuotas (quincenas o meses)
- * @param {string} frequency     - 'mensual' | 'quincenal'
- */
-export function calcTotalLoan(amount, ratePercent, numPayments, frequency = 'mensual') {
-    const interestPerPeriod = calcInterest(amount, ratePercent, frequency)
-    return {
-        interestPerPeriod,
-        totalInterest: interestPerPeriod * numPayments,
-        totalToPay: amount + interestPerPeriod * numPayments,
-        // Útil para mostrar en UI: equivalente mensual siempre consistente
-        monthlyInterest: Math.round((amount * ratePercent) / 100),
-    }
-}
-
 // Calcula todas las fechas de pago de un préstamo
 export function calcPaymentDates(firstPaymentDate, frequency, count = 12) {
     if (!firstPaymentDate) return []
@@ -183,7 +165,9 @@ export function calcInterestCarryover(loan, payments = []) {
     }
 
     const isVariable = loan.interest_type === 'variable'
-    const sorted = [...payments].sort((a, b) => new Date(a.date) - new Date(b.date))
+    const sorted = payments
+        .filter(p => !p.voided)
+        .sort((a, b) => new Date(a.date) - new Date(b.date))
 
     let capitalPaidSoFar = 0
     let carryover = 0
@@ -198,14 +182,17 @@ export function calcInterestCarryover(loan, payments = []) {
         // contra el interés esperado del préstamo actual.
         const isMigrated = !!p.original_loan_id
 
-        const baseInterest = isVariable
-            ? calcInterest(loan.amount - capitalPaidSoFar, loan.interest_rate, loan.frequency)
-            : (loan.interest_amount || 0)
-
         if (!beforeRateChange && !isMigrated) {
-            const expected = baseInterest + carryover
-            const actuallyPaid = p.interest_paid || 0
-            carryover = expected - actuallyPaid
+            if (p.is_extra) {
+                // Abono adicional dentro de un periodo ya cubierto: NO abre un periodo
+                // nuevo, así que no suma interés esperado. Si trae interés, queda a favor.
+                carryover -= p.interest_paid || 0
+            } else {
+                const baseInterest = isVariable
+                    ? calcInterest(loan.amount - capitalPaidSoFar, loan.interest_rate, loan.frequency)
+                    : (loan.interest_amount || 0)
+                carryover = baseInterest + carryover - (p.interest_paid || 0)
+            }
         }
 
         capitalPaidSoFar += (p.capital_paid || 0)

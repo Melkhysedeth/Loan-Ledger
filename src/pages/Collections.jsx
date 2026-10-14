@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../db/supabase'
 import { formatCOP } from '../utils/format'
 import { calcNextPaymentDate, classifyLoan } from '../utils/loanCalc'
+import { installmentsMade } from '../utils/loanMetrics'
+import { collectedSince, monthStart } from '../utils/accounting'
 import { AlertCircle, Clock, CheckCircle, ChevronRight, MessageCircle, Bell } from 'lucide-react'
 
 
@@ -41,12 +43,7 @@ export default function Collections() {
             supabase.from('payments').select('*'),
         ])
 
-        const now = new Date()
-        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0]
-        const collected = (allPayments || [])
-            .filter(p => p.date >= startOfMonth)
-            .reduce((s, p) => s + (p.total_paid || 0), 0)
-        setCollectedThisMonth(collected)
+        setCollectedThisMonth(collectedSince(allPayments || [], monthStart()))
 
         const activeLoans = (allLoans || []).filter(l =>
             l.status === 'active' || l.status === 'overdue' || l.status === 'agreement'
@@ -57,7 +54,7 @@ export default function Collections() {
         for (const loan of activeLoans) {
             if (!loan.first_payment_date) continue
             const loanPayments = (allPayments || []).filter(p => p.loan_id === loan.id)
-            const paymentsMade = loanPayments.length
+            const paymentsMade = installmentsMade(loanPayments)
             const classification = classifyLoan(loan.first_payment_date, loan.frequency, paymentsMade)
             if (!result[classification]) continue
 

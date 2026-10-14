@@ -24,6 +24,11 @@ export function mensajeDesembolso({ client, loan }) {
 Cualquier duda con gusto te ayudamos. 🙌`
 }
 
+// Recordatorio genérico de pago pendiente.
+export function mensajeRecordatorio({ client }) {
+    return `Hola ${primerNombre(client.name)}, te recordamos que tienes un pago pendiente. Por favor contáctanos para coordinar. 🙏`
+}
+
 // Mensaje enviado cuando se registra un pago.
 // `interestPendiente` > 0 significa que quedó faltando interés de este período;
 // `saldoFavorInteres` > 0 significa que pagó interés de más (a favor).

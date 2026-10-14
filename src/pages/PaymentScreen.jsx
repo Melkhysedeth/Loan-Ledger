@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "../db/supabase";
 import { formatCOP, parseCOP } from "../utils/format";
+import { activePayments, installmentsMade } from "../utils/loanMetrics";
 import {
   calcNextPaymentDate,
   calcVariableInterest,
@@ -83,6 +84,8 @@ export default function PaymentScreen() {
   const [reference, setReference] = useState("");
   const [notes, setNotes] = useState("");
   const [periodsToSettle, setPeriodsToSettle] = useState(1)
+  // Abono adicional: dinero extra dentro de un periodo ya cubierto. No cuenta como cuota.
+  const [isExtra, setIsExtra] = useState(false)
 
   // Modal de confirmación de envío de WhatsApp tras registrar el pago
   const [waModal, setWaModal] = useState({ open: false, phone: '', message: '' })
@@ -117,9 +120,9 @@ export default function PaymentScreen() {
       </div>
     );
 
-  const totalCapitalPaid = payments.reduce((s, p) => s + (p.capital_paid || 0), 0) + (loan.initial_capital_paid || 0);
-  const totalInterestPaid = payments.reduce((s, p) => s + (p.interest_paid || 0), 0) + (loan.initial_interest_paid || 0);
-  const paymentsMade = payments.length;
+  const validPayments = activePayments(payments);
+  const totalCapitalPaid = validPayments.reduce((s, p) => s + (p.capital_paid || 0), 0) + (loan.initial_capital_paid || 0);
+  const paymentsMade = installmentsMade(validPayments);
   const remaining = loan.amount - totalCapitalPaid;
   const isVariable = loan.interest_type === "variable";
 
@@ -163,9 +166,16 @@ export default function PaymentScreen() {
     .slice(0, 2)
     .toUpperCase();
 
-  const cuotaLabel = loan.num_payments
-    ? `${paymentsMade + 1} de ${loan.num_payments}`
+  const cuotaLabel = isExtra
+    ? "Abono adicional"
     : `Cuota ${paymentsMade + 1}`;
+
+  function toggleExtra(on) {
+    setIsExtra(on)
+    setPeriodsToSettle(1)
+    // Un abono adicional no tiene interés obligatorio: se escribe solo si el cliente lo abona.
+    setInterestInput(on ? "" : formatCOP(nextExpectedInterest))
+  }
 
   // Se llama al cerrar el modal de WhatsApp (haya enviado o no).
   function finishAndExit() {
@@ -181,7 +191,7 @@ export default function PaymentScreen() {
       // una fila de pago por cada período (mismo día), cada una con su interés
       // correspondiente. El capital abonado va completo en la última fila.
       const rows = []
-      if (periodsToSettle > 1) {
+      if (!isExtra && periodsToSettle > 1) {
         const interestToApply = Math.min(total, interest)
         const interestPerPeriod = Math.round(interestToApply / periodsToSettle)
 
@@ -220,7 +230,8 @@ export default function PaymentScreen() {
       } else {
         const diff = nextExpectedInterest - interest
         let autoNote = null
-        if (diff > 0) autoNote = `Faltaron ${formatCOP(diff)} de interés en este pago.`
+        if (isExtra) autoNote = 'Abono adicional dentro del mismo período.'
+        else if (diff > 0) autoNote = `Faltaron ${formatCOP(diff)} de interés en este pago.`
         else if (diff < 0) autoNote = `Pagó ${formatCOP(Math.abs(diff))} de interés de más (quedó a favor).`
 
         const activeMethods = Object.entries(methodAmounts)
@@ -241,7 +252,9 @@ export default function PaymentScreen() {
           total_paid: total,
           interest_paid: actualInterest,
           capital_paid: capitalNum,
-          late: mora.inMora,
+          late: mora.inMora && !isExtra,
+          // La columna is_extra solo se envía cuando aplica.
+          ...(isExtra && { is_extra: true }),
           notes: [autoNote, notes || null].filter(Boolean).join(' ') || null,
           payment_method: isSingle ? activeMethods[0][0] : null,
           method_breakdown: isSingle ? null : Object.fromEntries(activeMethods),
@@ -264,7 +277,8 @@ export default function PaymentScreen() {
 
       // Cuánto quedó faltando (o a favor) de interés de este período,
       // para informarlo en el mensaje. Si se liquidó el préstamo no aplica.
-      const diffInteres = nextExpectedInterest - interestPaidBatch
+      // En un abono adicional no hay interés esperado: lo que abone de interés queda a favor.
+      const diffInteres = isExtra ? -interestPaidBatch : nextExpectedInterest - interestPaidBatch
 
       const message = mensajePago({
         client,
@@ -393,7 +407,7 @@ export default function PaymentScreen() {
           </div>
         )}
 
-        {mora.inMora && mora.periodosEnMora > 0 && (
+        {!isExtra && mora.inMora && mora.periodosEnMora > 0 && (
           <div className="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm">
             <p className="text-sm font-bold text-gray-800 dark:text-gray-100 mb-2">
               ¿Cuántos períodos de interés está liquidando?
@@ -463,6 +477,28 @@ export default function PaymentScreen() {
               {formatCOP(Math.abs(carryover))}
             </p>
           </div>
+        )}
+
+        {/* Abono adicional: extra dentro de una cuota ya cubierta, o abono anticipado antes del vencimiento */}
+        {(
+          <label className="flex items-start gap-3 bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm cursor-pointer">
+            <input
+              type="checkbox"
+              checked={isExtra}
+              onChange={(e) => toggleExtra(e.target.checked)}
+              className="mt-0.5 w-5 h-5 accent-blue-600 shrink-0"
+            />
+            <div>
+              <p className="text-sm font-bold text-gray-800 dark:text-gray-100">
+                Abono adicional del mismo período
+              </p>
+              <p className="text-xs text-gray-400 mt-0.5">
+                Úsalo si el cliente ya cubrió esta cuota y entrega dinero extra, o si abona antes de
+                que venza la cuota. No cuenta como cuota ni mueve la próxima fecha; si abona interés,
+                queda a favor.
+              </p>
+            </div>
+          </label>
         )}
 
         {/* 1. Monto */}

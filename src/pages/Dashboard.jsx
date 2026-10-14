@@ -13,6 +13,8 @@ import {
     Wallet, Users, CalendarPlus, Banknote, UserPlus, FileBarChart, ChevronRight, X, ArrowRightLeft
 } from 'lucide-react'
 import Carousel from '../components/Carousel'
+import { activePayments, groupBy, installmentsMade } from '../utils/loanMetrics'
+import { isActiveLoan, totalLentOf, pendingBalanceOf, collectedSince, monthStart } from '../utils/accounting'
 
 function getGreeting() {
     const h = new Date().getHours()
@@ -64,7 +66,6 @@ export default function Dashboard() {
 
     async function load() {
         const now = new Date()
-        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
 
         const [{ data: clients }, { data: loans }, { data: payments }, { data: withdrawals }, { data: injections }, { data: disbursements }] = await Promise.all([
             supabase.from('clients').select('*'),
@@ -79,10 +80,9 @@ export default function Dashboard() {
 
         const allLoans = loans || []
         const allClients = clients || []
-        const allPayments = payments || []
-        const totalWithdrawn = (withdrawals || [])
-            .filter(w => !w.is_transfer)
-            .reduce((s, w) => s + (w.amount || 0), 0)
+        // Los pagos anulados no entran en ninguna cifra (cobrado, capital disponible, gráficas, saldos).
+        const allPayments = activePayments(payments || [])
+        const paymentsByLoan = groupBy(allPayments, 'loan_id')
 
         // ── Disponible para prestar ──
         // Se ancla en la fecha de tu primera inyección (el ajuste inicial).
@@ -151,19 +151,11 @@ export default function Dashboard() {
             breb: capitalByMethod('breb'),
         }
 
-        const activeLoans = allLoans.filter(l => ['active', 'overdue', 'frozen', 'agreement'].includes(l.status))
+        const activeLoans = allLoans.filter(isActiveLoan)
         const onTimeLoans = allLoans.filter(l => ['active', 'frozen', 'agreement'].includes(l.status))
-        const totalLent = activeLoans.reduce((s, l) => s + (l.amount || 0), 0) - totalWithdrawn
-
-        const collectedThisMonth = allPayments
-            .filter(p => p.date >= startOfMonth.split('T')[0])
-            .reduce((s, p) => s + (p.total_paid || 0), 0)
-
-        // Saldo pendiente: capital de préstamos activos menos lo ya pagado
-        const pendingBalance = activeLoans.reduce((s, l) => {
-            const paid = allPayments.filter(p => p.loan_id === l.id).reduce((a, p) => a + (p.capital_paid || 0), 0)
-            return s + (l.amount - paid)
-        }, 0)
+        const totalLent = totalLentOf(activeLoans, withdrawals || [])
+        const collectedThisMonth = collectedSince(allPayments, monthStart(now))
+        const pendingBalance = pendingBalanceOf(activeLoans, paymentsByLoan)
 
         const activeClients = allClients.filter(c => c.status === 'active').length
 
@@ -173,10 +165,10 @@ export default function Dashboard() {
 
         for (const loan of activeLoans) {
             if (!loan.first_payment_date) continue
-            const loanPayments = allPayments.filter(p => p.loan_id === loan.id)
+            const loanPayments = paymentsByLoan.get(loan.id) || []
             // Mismo criterio que en LoanDetail.jsx: los pagos migrados de una
             // unificación no cuentan como cuotas del cronograma nuevo.
-            const paymentsMade = loanPayments.filter(p => !p.original_loan_id).length
+            const paymentsMade = installmentsMade(loanPayments)
             const classification = classifyLoan(loan.first_payment_date, loan.frequency, paymentsMade)
             const client = allClients.find(c => c.id === loan.client_id)
 

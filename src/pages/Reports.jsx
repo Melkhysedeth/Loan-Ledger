@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../db/supabase'
 import { formatCOP } from '../utils/format'
+import { monthStart } from '../utils/accounting'
 import {
     ChevronLeft, TrendingUp, AlertCircle, AlertTriangle, Percent, BarChart2,
     BarChart3, Banknote, ChevronRight, ChevronDown, X, DollarSign, Clock,
@@ -19,7 +20,7 @@ export default function Reports() {
     async function load() {
         const [{ data: loans }, { data: payments }, { data: clients }, { data: withdrawals }] = await Promise.all([
             supabase.from('loans').select('id, amount, interest_rate, status, created_at'),
-            supabase.from('payments').select('total_paid, interest_paid, created_at').eq('voided', false),
+            supabase.from('payments').select('total_paid, interest_paid, date').eq('voided', false),
             supabase.from('clients').select('id'),
             supabase.from('capital_withdrawals').select('amount, date, notes, is_transfer').order('date', { ascending: false }),
         ])
@@ -37,10 +38,9 @@ export default function Reports() {
         const capitalEnMora = overdueLoans.reduce((s, l) => s + (l.amount || 0), 0)
         const gananciaTotal = allPayments.reduce((s, p) => s + (p.interest_paid || 0), 0)
 
-        const now = new Date()
-        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+        const startOfMonth = monthStart()
         const pagosEsteMes = allPayments
-            .filter(p => new Date(p.created_at) >= startOfMonth)
+            .filter(p => p.date >= startOfMonth)
             .reduce((s, p) => s + (p.interest_paid || 0), 0)
 
         const allActiveForRate = [...activeLoans, ...overdueLoans]

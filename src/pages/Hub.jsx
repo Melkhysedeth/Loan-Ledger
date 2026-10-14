@@ -4,8 +4,10 @@ import { supabase } from '../db/supabase'
 import { useAuth } from '../context/AuthContext'
 import { formatCOP } from '../utils/format'
 import { classifyLoan } from '../utils/loanCalc'
+import { activePayments, groupBy, installmentsMade } from '../utils/loanMetrics'
+import { isActiveLoan, totalLentOf, pendingBalanceOf, collectedSince, monthStart } from '../utils/accounting'
 import { forceTileRepaint } from '../hooks/useForceRepaint'
-import { Users, Wallet, Leaf, ChevronRight, Bell } from 'lucide-react'
+import { Users, Wallet, ChevronRight, Bell } from 'lucide-react'
 
 function getGreeting() {
     const h = new Date().getHours()
@@ -32,9 +34,6 @@ export default function Hub() {
 
     useEffect(() => {
         async function load() {
-            const now = new Date()
-            const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0]
-
             const [{ count: totalClients }, { data: loans }, { data: payments }, { data: withdrawals }] = await Promise.all([
                 supabase.from('clients').select('id', { count: 'exact', head: true }),
                 supabase.from('loans').select('*'),
@@ -43,22 +42,13 @@ export default function Hub() {
             ])
 
             const allLoans = loans || []
-            const allPayments = payments || []
-            const activeLoans = allLoans.filter(l => ['active', 'overdue', 'frozen', 'agreement'].includes(l.status))
+            const allPayments = activePayments(payments || [])
+            const paymentsByLoan = groupBy(allPayments, 'loan_id')
+            const activeLoans = allLoans.filter(isActiveLoan)
 
-            const totalWithdrawn = (withdrawals || [])
-                .filter(w => !w.is_transfer)
-                .reduce((s, w) => s + (w.amount || 0), 0)
-            const totalLent = activeLoans.reduce((s, l) => s + (l.amount || 0), 0) - totalWithdrawn
-
-            const collectedThisMonth = allPayments
-                .filter(p => p.date >= startOfMonth)
-                .reduce((s, p) => s + (p.total_paid || 0), 0)
-
-            const pendingBalance = activeLoans.reduce((s, l) => {
-                const paid = allPayments.filter(p => p.loan_id === l.id).reduce((a, p) => a + (p.capital_paid || 0), 0) + (l.initial_capital_paid || 0)
-                return s + (l.amount - paid)
-            }, 0)
+            const totalLent = totalLentOf(activeLoans, withdrawals || [])
+            const collectedThisMonth = collectedSince(allPayments, monthStart())
+            const pendingBalance = pendingBalanceOf(activeLoans, paymentsByLoan)
 
             let overdueCount = 0
             let dueSoonCount = 0
@@ -67,8 +57,8 @@ export default function Hub() {
             for (const loan of activeLoans) {
                 clientIdsWithLoan.add(loan.client_id)
                 if (!loan.first_payment_date) continue
-                const loanPayments = allPayments.filter(p => p.loan_id === loan.id)
-                const classification = classifyLoan(loan.first_payment_date, loan.frequency, loanPayments.length)
+                const loanPayments = paymentsByLoan.get(loan.id) || []
+                const classification = classifyLoan(loan.first_payment_date, loan.frequency, installmentsMade(loanPayments))
                 if (classification === 'overdue') overdueCount++
                 if (classification === 'today' || classification === 'soon') dueSoonCount++
             }
@@ -137,18 +127,7 @@ export default function Hub() {
                         stat2Label="Vencidas" stat2Value={metrics.overdueCount} stat2Danger
                         onClick={() => navigate('/loans')}
                     />
-                    <SummaryCard
-                        Icon={Leaf}
-                        variant="amber"
-                        title="Fuxion"
-                        value={formatCOP(9800000)}
-                        sub="Ventas este mes"
-                        stat1Label="Clientes" stat1Value={186}
-                        stat2Label="Pedidos" stat2Value={16}
-                        onClick={() => navigate('/fuxion')}
-                    />
                 </div>
-                {/* TODO: la tarjeta de Fuxion está hardcodeada — conectar a fuxion_sales cuando exista */}
             </div>
 
             {/* Panel embebido — mismo contenedor "alto relieve", ahora blanco en vez de negro */}
@@ -176,22 +155,6 @@ export default function Hub() {
                     >
                         <MiniStat label="Cobrado este mes" value={formatCOP(metrics.collectedThisMonth)} />
                         <MiniStat label="Préstamos activos" value={metrics.activeLoans} />
-                    </ModuleCard>
-
-                    <div className="h-4" />
-
-                    <ModuleCard
-                        Icon={Leaf}
-                        title="Fuxion"
-                        badge="próximamente"
-                        badgeColor="#f3e8ff"
-                        badgeText="#7e22ce"
-                        accent="#7e22ce"
-                        description="Administra ventas, clientes y comisiones de Fuxion."
-                        onEnter={() => navigate('/fuxion')}
-                    >
-                        <MiniStat label="Ventas este mes" value="—" />
-                        <MiniStat label="Pedidos pendientes" value="—" />
                     </ModuleCard>
                 </div>
             </div>

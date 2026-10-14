@@ -1,22 +1,19 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../db/supabase'
-import { formatCOP } from '../utils/format'
+import { formatCOP, formatDate } from '../utils/format'
 import { calcRanking, RANKING_LABELS } from '../utils/ranking'
+import { activePayments, totalPaidOf, loanCapitalPaid, groupBy } from '../utils/loanMetrics'
+import { buildWhatsAppLink } from '../utils/whatsapp'
+import { mensajeRecordatorio } from '../utils/whatsappMessages'
 import {
-  ChevronLeft, Pencil, Plus, CreditCard,
-  CheckCircle, Clock, Phone, MapPin, User, MessageCircle
+  Pencil, Plus, CreditCard, CheckCircle, Phone, MapPin, User, MessageCircle,
 } from 'lucide-react'
 import { SkeletonStats, SkeletonList, SkeletonCard } from '../components/SkeletonLoader'
-
-const STATUS = {
-  active: { label: 'Activo', color: 'text-green-700 bg-green-100 dark:text-green-400 dark:bg-green-900/30', Icon: CheckCircle },
-  frozen: { label: 'Congelado', color: 'text-blue-700 bg-blue-100 dark:text-blue-400 dark:bg-blue-900/30', Icon: Clock },
-  overdue: { label: 'En mora', color: 'text-red-700 bg-red-100 dark:text-red-400 dark:bg-red-900/30', Icon: Clock },
-  paid: { label: 'Liquidado', color: 'text-gray-500 bg-gray-100 dark:text-gray-400 dark:bg-gray-700', Icon: CheckCircle },
-  agreement: { label: 'Acuerdo especial', color: 'text-amber-700 bg-amber-100 dark:text-amber-400 dark:bg-amber-900/30', Icon: Clock },
-  unified: { label: 'Unificado', color: 'text-purple-700 bg-purple-100 dark:text-purple-400 dark:bg-purple-900/30', Icon: CheckCircle },
-}
+import PageHero, { HeroButton, HeroOverlap } from '../components/ui/PageHero'
+import Avatar from '../components/ui/Avatar'
+import StatusBadge from '../components/ui/StatusBadge'
+import { CARD, StatCard, SectionCard, InfoRow, EmptyState } from '../components/ui/Cards'
 
 const TABS = ['Información', 'Préstamos', 'Pagos']
 
@@ -29,152 +26,135 @@ export default function ClientDetail() {
   const [tab, setTab] = useState(0)
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => { load() }, [id])
+  useEffect(() => {
+    let cancelled = false
+    async function load() {
+      const [{ data: c }, { data: l }] = await Promise.all([
+        supabase.from('clients').select('*').eq('id', id).single(),
+        supabase.from('loans').select('*').eq('client_id', id).order('created_at', { ascending: false }),
+      ])
+      const loanIds = (l || []).map(loan => loan.id)
+      const { data: p } = loanIds.length
+        ? await supabase.from('payments').select('*').in('loan_id', loanIds).order('date', { ascending: false })
+        : { data: [] }
+      if (cancelled) return
+      setClient(c)
+      setLoans(l || [])
+      setPayments(p || [])
+      setLoading(false)
+    }
+    load()
+    return () => { cancelled = true }
+  }, [id])
 
-  async function load() {
-    const [{ data: c }, { data: l }, { data: allPayments }] = await Promise.all([
-      supabase.from('clients').select('*').eq('id', id).single(),
-      supabase.from('loans').select('*').eq('client_id', id).order('created_at', { ascending: false }),
-      supabase.from('payments').select('*').in(
-        'loan_id',
-        (await supabase.from('loans').select('id').eq('client_id', id)).data?.map(l => l.id) || []
-      ),
-    ])
-    setClient(c)
-    setLoans(l || [])
-    setPayments(allPayments || [])
-    setLoading(false)
-  }
+  const stats = useMemo(() => {
+    const valid = activePayments(payments)
+    const byLoan = groupBy(valid, 'loan_id')
+    const activeLoans = loans.filter(l => l.status !== 'paid' && l.status !== 'unified' && l.status !== 'cancelled')
+    const paidLoans = loans.filter(l => l.status === 'paid')
+    const totalPrestado = activeLoans.reduce((s, l) => s + (l.amount || 0), 0)
+    const capitalPagado = activeLoans.reduce((s, l) => s + loanCapitalPaid(l, byLoan.get(l.id) || []), 0)
+    return {
+      valid,
+      activeLoans,
+      paidLoans,
+      totalPrestado,
+      totalCollected: totalPaidOf(valid),
+      totalPending: totalPrestado - capitalPagado,
+    }
+  }, [loans, payments])
 
   if (loading) return (
-    <div className="px-4 pt-6 space-y-4 min-h-screen bg-gray-50 dark:bg-gray-900">
-      <div className="flex items-center gap-3 mb-2">
-        <div className="w-9 h-9 rounded-xl bg-gray-200 dark:bg-gray-700 animate-pulse" />
-        <div className="h-5 w-40 bg-gray-200 dark:bg-gray-700 rounded-full animate-pulse" />
-      </div>
+    <div className="px-4 pt-6 space-y-4 min-h-screen bg-gray-50 dark:bg-gray-950">
+      <div className="h-40 rounded-3xl bg-gray-200 dark:bg-gray-800 animate-pulse" />
       <SkeletonCard lines={4} />
       <SkeletonStats />
       <SkeletonList rows={3} />
     </div>
   )
 
-  const activeLoans = loans.filter(l => l.status !== 'paid' && l.status !== 'unified')
-  const paidLoans = loans.filter(l => l.status === 'paid')
+  if (!client) return (
+    <div className="p-6 text-center text-gray-400 mt-20 min-h-screen bg-gray-50 dark:bg-gray-950">
+      Cliente no encontrado
+    </div>
+  )
 
-  // Total prestado = suma de montos originales de préstamos no liquidados
-  const totalPrestado = activeLoans.reduce((s, l) => s + (l.amount || 0), 0)
-
-  // Total cobrado = suma de todos los pagos recibidos
-  const totalCollected = payments.reduce((s, p) => s + (p.total_paid || 0), 0)
-
-  // Capital ya pagado = suma de abonos a capital
-  const totalCapitalPagado = activeLoans.reduce((s, l) => {
-    const pagadoReal = payments
-      .filter(p => p.loan_id === l.id)
-      .reduce((a, p) => a + (p.capital_paid || 0), 0)
-    return s + pagadoReal
-  }, 0)
-
-  // Saldo pendiente real = lo que falta por pagar de capital
-  const totalPending = totalPrestado - totalCapitalPagado
-  const ranking = client.ranking_override || calcRanking(payments, loans)
+  const { valid, activeLoans, paidLoans, totalPrestado, totalCollected, totalPending } = stats
+  const ranking = client.ranking_override || calcRanking(valid, loans)
   const rl = RANKING_LABELS[ranking] || RANKING_LABELS.nuevo
   const lastLoan = loans[0]
-  const initials = client.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
 
-  function enviarRecordatorio(client) {
-    if (!client?.phone) { alert('Este cliente no tiene teléfono registrado'); return }
-    const phone = client.phone.replace(/\D/g, '')
-    const fullPhone = phone.startsWith('57') && phone.length === 12 ? phone : `57${phone}`
-    const mensaje = `Hola ${client.name}, te recordamos que tienes un pago pendiente. Por favor contáctanos para coordinar. 🙏`
-    window.open(`https://wa.me/${fullPhone}?text=${encodeURIComponent(mensaje)}`, '_blank')
+  function enviarRecordatorio() {
+    const link = buildWhatsAppLink(client.phone, mensajeRecordatorio({ client }))
+    if (!link) { alert('Este cliente no tiene teléfono registrado'); return }
+    window.open(link, '_blank')
   }
 
   return (
-    <div className="pb-10 min-h-screen bg-gray-50 dark:bg-gray-900">
-
-      {/* ── Header ── */}
-      <div className="px-4 pt-6 pb-3 flex items-center gap-3">
-        <button
-          onClick={() => navigate(-1)}
-          className="w-9 h-9 flex items-center justify-center rounded-xl bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 shadow-sm dark:shadow-none border border-gray-100 dark:border-transparent active:scale-95 transition"
-        >
-          <ChevronLeft size={20} />
-        </button>
-        <h1 className="text-lg font-semibold text-gray-900 dark:text-white flex-1">Detalle del cliente</h1>
-        <button
-          onClick={() => navigate(`/clients/${id}`)}
-          className="w-9 h-9 flex items-center justify-center rounded-xl bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 shadow-sm dark:shadow-none border border-gray-100 dark:border-transparent active:scale-95 transition"
-        >
-          <Pencil size={15} />
-        </button>
-      </div>
-
-      {/* ── Perfil ── */}
-      <div className="mx-4 bg-white dark:bg-gray-800 rounded-2xl p-5 mb-4 shadow-sm dark:shadow-none border border-gray-100 dark:border-transparent">
-        <div className="flex items-start gap-4">
-          <div className="w-16 h-16 rounded-full bg-blue-100 dark:bg-blue-900/60 text-blue-600 dark:text-blue-300 font-bold text-xl flex items-center justify-center shrink-0 border-2 border-blue-200 dark:border-blue-700/40">
-            {initials}
-          </div>
+    <div className="pb-10 min-h-screen bg-gray-50 dark:bg-gray-950">
+      <PageHero
+        title="Detalle del cliente"
+        onBack={() => navigate(-1)}
+        actions={
+          <HeroButton onClick={() => navigate(`/clients/${id}`)} label="Editar cliente">
+            <Pencil size={15} />
+          </HeroButton>
+        }
+      >
+        <div className="flex items-center gap-4">
+          <Avatar name={client.name} size="lg" onHero />
           <div className="flex-1 min-w-0">
-            <p className="text-gray-900 dark:text-white font-bold text-lg leading-tight truncate">{client.name}</p>
+            <p className="text-white font-bold text-lg leading-tight truncate">{client.name}</p>
             <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full mt-1 ${rl.color}`}>
-              {rl.emoji} {rl.label}
+              <rl.Icon size={11} /> {rl.label}
             </span>
-            <div className="mt-2 space-y-1">
-              {client.phone && (
-                <div className="flex items-center gap-1.5 text-gray-500 dark:text-gray-400 text-sm">
-                  <Phone size={13} /><span>{client.phone}</span>
-                </div>
-              )}
-              {client.cedula && (
-                <div className="flex items-center gap-1.5 text-gray-500 dark:text-gray-400 text-sm">
-                  <User size={13} /><span>CC {client.cedula}</span>
-                </div>
-              )}
-              {client.address && (
-                <div className="flex items-center gap-1.5 text-gray-400 dark:text-gray-500 text-xs">
-                  <MapPin size={12} /><span className="truncate">{client.address}</span>
-                </div>
-              )}
+            <div className="mt-2 space-y-1 text-white/80 text-sm">
+              {client.phone && <p className="flex items-center gap-1.5"><Phone size={13} />{client.phone}</p>}
+              {client.cedula && <p className="flex items-center gap-1.5"><User size={13} />CC {client.cedula}</p>}
+              {client.address && <p className="flex items-center gap-1.5 text-xs text-white/70"><MapPin size={12} /><span className="truncate">{client.address}</span></p>}
             </div>
           </div>
         </div>
-      </div>
+      </PageHero>
 
-      {/* ── Stats ── */}
-      <div className="grid grid-cols-2 gap-3 mx-4 mb-4">
-        <StatCard label="Total prestado activo" value={formatCOP(totalPrestado)} accent="text-gray-900 dark:text-white" />
-        <StatCard label="Total cobrado" value={formatCOP(totalCollected)} accent="text-green-600 dark:text-green-400" sub={`${payments.length} pagos`} />
-        <StatCard label="Saldo pendiente total" value={formatCOP(totalPending)} accent="text-amber-600 dark:text-amber-400" sub={`${activeLoans.length} préstamo${activeLoans.length !== 1 ? 's' : ''}`} />
-        <StatCard label="Préstamos" value={loans.length} accent="text-blue-600 dark:text-blue-400" sub={paidLoans.length > 0 ? `${paidLoans.length} liquidados` : 'Activo'} />
+      {/* ── Stats (las dos primeras se montan sobre la curva) ── */}
+      <HeroOverlap>
+        <div className="grid grid-cols-2 gap-3">
+          <StatCard label="Saldo pendiente" value={formatCOP(totalPending)} accent="text-amber-600 dark:text-amber-400"
+            sub={`${activeLoans.length} préstamo${activeLoans.length !== 1 ? 's' : ''} activo${activeLoans.length !== 1 ? 's' : ''}`} />
+          <StatCard label="Total cobrado" value={formatCOP(totalCollected)} accent="text-green-600 dark:text-green-400"
+            sub={`${valid.length} pagos`} />
+        </div>
+      </HeroOverlap>
+
+      <div className="grid grid-cols-2 gap-3 mx-4 mt-3 mb-4">
+        <StatCard label="Prestado activo" value={formatCOP(totalPrestado)} />
+        <StatCard label="Préstamos" value={loans.length} accent="text-blue-600 dark:text-blue-400"
+          sub={paidLoans.length > 0 ? `${paidLoans.length} liquidados` : 'Ninguno liquidado'} />
       </div>
 
       {/* ── Tabs ── */}
       <div className="mx-4 mb-4">
         <div className="flex bg-gray-200 dark:bg-gray-800 rounded-xl p-1 gap-1">
-          {TABS.map((t, i) => (
-            <button
-              key={t}
-              onClick={() => setTab(i)}
-              className={`flex-1 py-2 rounded-lg text-sm font-medium transition ${tab === i
-                ? 'bg-blue-600 text-white'
-                : 'text-gray-500 dark:text-gray-400 active:bg-gray-300 dark:active:bg-gray-700'
-                }`}
-            >
-              {t}
-              {i === 1 && loans.length > 0 && (
-                <span className={`ml-1 text-xs ${tab === 1 ? 'text-blue-200' : 'text-gray-400 dark:text-gray-600'}`}>
-                  ({loans.length})
-                </span>
-              )}
-              {i === 2 && payments.length > 0 && (
-                <span className={`ml-1 text-xs ${tab === 2 ? 'text-blue-200' : 'text-gray-400 dark:text-gray-600'}`}>
-                  ({payments.length})
-                </span>
-              )}
-            </button>
-          ))}
+          {TABS.map((t, i) => {
+            const count = i === 1 ? loans.length : i === 2 ? valid.length : 0
+            return (
+              <button
+                key={t}
+                onClick={() => setTab(i)}
+                className={`flex-1 py-2 rounded-lg text-sm font-medium transition ${tab === i
+                  ? 'bg-blue-600 text-white'
+                  : 'text-gray-500 dark:text-gray-400 active:bg-gray-300 dark:active:bg-gray-700'}`}
+              >
+                {t}
+                {count > 0 && (
+                  <span className={`ml-1 text-xs ${tab === i ? 'text-blue-200' : 'text-gray-400 dark:text-gray-600'}`}>
+                    ({count})
+                  </span>
+                )}
+              </button>
+            )
+          })}
         </div>
       </div>
 
@@ -195,7 +175,7 @@ export default function ClientDetail() {
               <InfoRow label="Monto" value={formatCOP(lastLoan.amount)} />
               <InfoRow label="Interés" value={`${lastLoan.interest_rate}%`} />
               <InfoRow label="Frecuencia" value={lastLoan.frequency} />
-              <InfoRow label="Fecha" value={new Date(lastLoan.created_at).toLocaleDateString('es-CO')} />
+              <InfoRow label="Fecha" value={formatDate(lastLoan.start_date || lastLoan.created_at)} />
               <div className="pt-2">
                 <button
                   onClick={() => navigate(`/loans/${lastLoan.id}`)}
@@ -213,31 +193,25 @@ export default function ClientDetail() {
       {tab === 1 && (
         <div className="mx-4">
           {loans.length === 0 ? <EmptyState text="Sin préstamos registrados" /> : (
-            <div className="bg-white dark:bg-gray-800 rounded-2xl overflow-hidden shadow-sm dark:shadow-none border border-gray-100 dark:border-transparent">
-              {loans.map((loan, i) => {
-                const cfg = STATUS[loan.status] || STATUS.active
-                return (
-                  <button
-                    key={loan.id}
-                    onClick={() => navigate(`/loans/${loan.id}`)}
-                    className={`w-full flex items-center gap-3 px-4 py-3.5 text-left active:bg-gray-50 dark:active:bg-gray-700 transition ${i < loans.length - 1 ? 'border-b border-gray-100 dark:border-gray-700' : ''
-                      }`}
-                  >
-                    <div className="w-9 h-9 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center shrink-0">
-                      <CreditCard size={15} className="text-gray-400" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{formatCOP(loan.amount)}</p>
-                      <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
-                        {new Date(loan.created_at).toLocaleDateString('es-CO')} · {loan.frequency} · {loan.interest_rate}%
-                      </p>
-                    </div>
-                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${cfg.color}`}>
-                      {cfg.label}
-                    </span>
-                  </button>
-                )
-              })}
+            <div className={`${CARD} overflow-hidden divide-y divide-gray-100 dark:divide-gray-700`}>
+              {loans.map(loan => (
+                <button
+                  key={loan.id}
+                  onClick={() => navigate(`/loans/${loan.id}`)}
+                  className="w-full flex items-center gap-3 px-4 py-3.5 text-left active:bg-gray-50 dark:active:bg-gray-700 transition"
+                >
+                  <div className="w-9 h-9 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center shrink-0">
+                    <CreditCard size={15} className="text-gray-400" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{formatCOP(loan.amount)}</p>
+                    <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+                      {formatDate(loan.start_date || loan.created_at)} · {loan.frequency} · {loan.interest_rate}%
+                    </p>
+                  </div>
+                  <StatusBadge status={loan.status} />
+                </button>
+              ))}
             </div>
           )}
         </div>
@@ -246,24 +220,16 @@ export default function ClientDetail() {
       {/* ── Tab 2: Pagos ── */}
       {tab === 2 && (
         <div className="mx-4">
-          {payments.length === 0 ? <EmptyState text="Sin pagos registrados" /> : (
-            <div className="bg-white dark:bg-gray-800 rounded-2xl overflow-hidden shadow-sm dark:shadow-none border border-gray-100 dark:border-transparent">
-              {payments.map((p, i) => (
-                <div
-                  key={p.id}
-                  className={`flex items-center gap-3 px-4 py-3.5 ${i < payments.length - 1 ? 'border-b border-gray-100 dark:border-gray-700' : ''
-                    }`}
-                >
+          {valid.length === 0 ? <EmptyState text="Sin pagos registrados" /> : (
+            <div className={`${CARD} overflow-hidden divide-y divide-gray-100 dark:divide-gray-700`}>
+              {valid.map(p => (
+                <div key={p.id} className="flex items-center gap-3 px-4 py-3.5">
                   <div className="w-9 h-9 rounded-full bg-green-100 dark:bg-green-900/40 flex items-center justify-center shrink-0">
                     <CheckCircle size={15} className="text-green-600 dark:text-green-400" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{formatCOP(p.total_paid)}</p>
-                    <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
-                      {p.payment_date
-                        ? new Date(p.payment_date).toLocaleDateString('es-CO')
-                        : new Date(p.created_at).toLocaleDateString('es-CO')}
-                    </p>
+                    <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{formatDate(p.date || p.created_at)}</p>
                   </div>
                   <span className="text-xs font-semibold text-green-600 dark:text-green-400">Pagado</span>
                 </div>
@@ -296,55 +262,12 @@ export default function ClientDetail() {
           </button>
         )}
         <button
-          onClick={() => enviarRecordatorio(client)}
+          onClick={enviarRecordatorio}
           className="col-span-2 bg-green-500 rounded-2xl py-3 flex items-center justify-center gap-2 text-white text-sm font-medium active:scale-95 transition"
         >
           <MessageCircle size={16} /> Enviar recordatorio por WhatsApp
         </button>
       </div>
-    </div>
-  )
-}
-
-// ── Sub-componentes ──────────────────────────────────────────
-
-function StatCard({ label, value, accent, sub }) {
-  return (
-    <div className="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm dark:shadow-none border border-gray-100 dark:border-transparent">
-      <p className="text-xs text-gray-400 dark:text-gray-400 mb-1">{label}</p>
-      <p className={`text-xl font-bold ${accent}`}>{value}</p>
-      {sub && <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{sub}</p>}
-    </div>
-  )
-}
-
-function SectionCard({ title, Icon, children }) {
-  return (
-    <div className="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm dark:shadow-none border border-gray-100 dark:border-transparent">
-      <div className="flex items-center gap-2 mb-3">
-        <div className="w-7 h-7 rounded-lg bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
-          <Icon size={14} className="text-gray-500 dark:text-gray-400" />
-        </div>
-        <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">{title}</p>
-      </div>
-      <div className="space-y-2">{children}</div>
-    </div>
-  )
-}
-
-function InfoRow({ label, value }) {
-  return (
-    <div className="flex justify-between items-start text-sm py-0.5">
-      <span className="text-gray-400 dark:text-gray-400 shrink-0 mr-3">{label}</span>
-      <span className="text-gray-800 dark:text-gray-100 font-medium capitalize text-right">{value}</span>
-    </div>
-  )
-}
-
-function EmptyState({ text }) {
-  return (
-    <div className="bg-white dark:bg-gray-800 rounded-2xl px-4 py-8 text-center shadow-sm dark:shadow-none border border-gray-100 dark:border-transparent">
-      <p className="text-sm text-gray-400">{text}</p>
     </div>
   )
 }

@@ -18,11 +18,7 @@ import { AuthProvider, useAuth } from './context/AuthContext'
 import { CreditCard } from 'lucide-react'
 import { useInactivity } from './hooks/useInactivity'
 import PaymentScreen from './pages/PaymentScreen'
-import Fuxion from './pages/Fuxion'
 import LoansLayout from './layouts/LoansLayout'
-import FuxionLayout from './layouts/FuxionLayout'
-import FuxionProducts from './pages/FuxionProducts'
-import FuxionSales from './pages/FuxionSales'
 
 function AppRoutes() {
   useTheme()
@@ -64,13 +60,6 @@ function AppRoutes() {
           <Route path="/clients/:id/unify-loans" element={<UnifyLoans />} />
           <Route path="/more" element={<More />} />
           <Route path="/reports" element={<Reports />} />
-        </Route>
-
-        {/* Módulo Fuxion: su propia barra */}
-        <Route element={<FuxionLayout />}>
-          <Route path="/fuxion" element={<Fuxion />} />
-          <Route path="/fuxion/products" element={<FuxionProducts />} />
-          <Route path="/fuxion/sales" element={<FuxionSales />} />
         </Route>
 
         <Route path="/reset-password" element={<ResetPassword />} />

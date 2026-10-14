@@ -1,51 +1,19 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../db/supabase'
 import { formatCOP, parseCOP } from '../utils/format'
-import { calcInterest, calcTotalLoan } from '../utils/loanCalc'
+import { calcInterest } from '../utils/loanCalc'
 import { useFormPersist } from '../hooks/useFormPersist'
-import { ChevronLeft } from 'lucide-react'
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom'
+import { METHODS } from '../constants/paymentMethods'
+import PageHero, { HeroOverlap } from '../components/ui/PageHero'
 import ConfirmWhatsAppModal from '../components/ConfirmWhatsAppModal'
 import { mensajeDesembolso } from '../utils/whatsappMessages'
 
 const initialLoan = {
     amount: '', rate: '', frequency: 'mensual',
     startDate: '', firstPaymentDate: '', notes: '',
-    interestType: 'fixed', numPayments: ''
+    interestType: 'fixed',
 }
-
-const METHODS = [
-    {
-        id: 'efectivo',
-        label: 'Efectivo',
-        icon: (
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                <rect x="2" y="6" width="20" height="12" rx="2" />
-                <circle cx="12" cy="12" r="3" />
-                <path d="M6 12h.01M18 12h.01" />
-            </svg>
-        ),
-    },
-    {
-        id: 'nequi',
-        label: 'Nequi',
-        icon: (
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z" />
-                <path d="M8 12l3 3 5-5" />
-            </svg>
-        ),
-    },
-    {
-        id: 'breb',
-        label: 'Bre-B',
-        icon: (
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4" />
-            </svg>
-        ),
-    },
-]
 
 // Estado del cliente seleccionado también se persiste por separado
 // porque es un objeto, no un campo de texto
@@ -71,8 +39,8 @@ export default function NewLoan() {
 
     const amount = parseCOP(loan.amount)
     const rate = parseFloat(loan.rate) || 0
-    const numPayments = parseInt(loan.numPayments) || 0
-    const preview = amount && rate ? calcTotalLoan(amount, rate, numPayments, loan.frequency) : null
+    // No hay cuotas fijas: el interés se genera cada período mientras haya capital pendiente.
+    const interestPerPeriod = amount && rate ? calcInterest(amount, rate, loan.frequency) : null
 
     // Persistir campos del préstamo
     const { clearPersisted: clearLoanForm } = useFormPersist(
@@ -103,7 +71,6 @@ export default function NewLoan() {
             firstPaymentDate: editLoan.first_payment_date || '',
             notes: editLoan.notes || '',
             interestType: editLoan.interest_type || 'fixed',
-            numPayments: editLoan.num_payments?.toString() || '',
         })
 
         supabase.from('loan_disbursements').select('*').eq('loan_id', editLoan.id)
@@ -227,9 +194,9 @@ export default function NewLoan() {
                 ...(!isEditing && { payment_method: isSingle ? activeMethods[0][0] : null }),
             }
 
-            let loanId = editLoan?.id
             if (isEditing) {
-                await supabase.from('loans').update(payload).eq('id', editLoan.id)
+                const { error } = await supabase.from('loans').update(payload).eq('id', editLoan.id)
+                if (error) { alert(`No se pudo guardar el préstamo: ${error.message}`); return }
                 // No se toca loan_disbursements: el desembolso ya ocurrió y no se vuelve a pedir.
                 // Tampoco se ofrece WhatsApp: una edición no es un nuevo desembolso.
                 clearAll()
@@ -237,12 +204,19 @@ export default function NewLoan() {
                 return
             }
 
-            const { data } = await supabase.from('loans').insert({ ...payload, status: 'active' }).select().single()
-            loanId = data.id
+            const { data, error } = await supabase.from('loans').insert({ ...payload, status: 'active' }).select().single()
+            if (error || !data) { alert(`No se pudo guardar el préstamo: ${error?.message || 'error desconocido'}`); return }
+
             const disbursementRows = activeMethods.map(([m, amt]) => ({
-                loan_id: loanId, payment_method: m, amount: amt,
+                loan_id: data.id, payment_method: m, amount: amt,
             }))
-            await supabase.from('loan_disbursements').insert(disbursementRows)
+            const { error: disbError } = await supabase.from('loan_disbursements').insert(disbursementRows)
+            if (disbError) {
+                // Sin desembolso registrado las cuentas por método quedarían mal: se deshace el préstamo.
+                await supabase.from('loans').delete().eq('id', data.id)
+                alert(`No se pudo registrar el desembolso, el préstamo no se guardó: ${disbError.message}`)
+                return
+            }
 
             // Préstamo nuevo desembolsado: ofrecemos enviar el WhatsApp.
             // El envío real solo ocurre si el usuario da clic en "Enviar" dentro del modal.
@@ -254,14 +228,14 @@ export default function NewLoan() {
     }
 
     return (
-        <div className="p-4 max-w-lg mx-auto pb-24">
-            <div className="flex items-center gap-3 mb-6">
-                <button onClick={() => navigate(-1)} className="text-blue-400">
-                    <ChevronLeft size={24} />
-                </button>
-                <h1 className="text-2xl font-bold text-gray-800 dark:text-white">{isEditing ? 'Editar Préstamo' : 'Nuevo Préstamo'}</h1>
-            </div>
+        <div className="min-h-screen bg-gray-50 dark:bg-gray-950 pb-24">
+            <PageHero
+                title={isEditing ? 'Editar préstamo' : 'Nuevo préstamo'}
+                subtitle={isEditing ? 'Actualiza las condiciones del préstamo' : 'Selecciona el cliente y define las condiciones'}
+                onBack={() => navigate(-1)}
+            />
 
+            <HeroOverlap>
             {/* CLIENTE */}
             <section className="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm mb-4">
                 <h2 className="font-semibold text-gray-500 dark:text-gray-400 mb-3 text-sm uppercase tracking-wide">Cliente</h2>
@@ -308,7 +282,9 @@ export default function NewLoan() {
                     </div>
                 )}
             </section>
+            </HeroOverlap>
 
+            <div className="px-4 mt-4">
             {/* PRÉSTAMO */}
             {selectedClient && (
                 <>
@@ -402,17 +378,22 @@ export default function NewLoan() {
                         </div>
                     </section>
 
-                    {preview && (
-                        <section className="bg-blue-900/20 rounded-2xl p-4 mb-4 border border-blue-800/40">
-                            <h2 className="font-semibold text-blue-400 mb-3 text-sm uppercase tracking-wide">Resumen</h2>
+                    {interestPerPeriod !== null && (
+                        <section className="bg-blue-50 dark:bg-blue-900/20 rounded-2xl p-4 mb-4 border border-blue-200 dark:border-blue-800/40">
+                            <h2 className="font-semibold text-blue-600 dark:text-blue-400 mb-3 text-sm uppercase tracking-wide">Resumen</h2>
                             <div className="space-y-1 text-sm">
                                 <Row label="Capital prestado" value={formatCOP(amount)} />
-                                <Row label="Interés por cuota" value={formatCOP(preview.interestPerPeriod)} />
-                                {numPayments > 0 && <>
-                                    <Row label="Total en intereses" value={formatCOP(preview.totalInterest)} />
-                                    <Row label="Total a recibir" value={formatCOP(preview.totalToPay)} bold />
-                                </>}
+                                <Row
+                                    label={`Interés por período (${loan.frequency})`}
+                                    value={formatCOP(interestPerPeriod)}
+                                    bold
+                                />
                             </div>
+                            <p className="text-xs text-blue-600/70 dark:text-blue-300/60 mt-2">
+                                {loan.interestType === 'variable'
+                                    ? 'El interés se recalcula sobre el saldo pendiente en cada período.'
+                                    : 'El interés se sigue generando cada período hasta que se pague el capital.'}
+                            </p>
                         </section>
                     )}
 
@@ -425,6 +406,7 @@ export default function NewLoan() {
                     </button>
                 </>
             )}
+            </div>
 
             <ConfirmWhatsAppModal
                 open={waModal.open}
@@ -452,7 +434,7 @@ function Field({ label, name, value, onChange, placeholder, type = 'text', texta
 
 function Row({ label, value, bold }) {
     return (
-        <div className={`flex justify-between ${bold ? 'font-bold text-blue-400 text-base mt-2 pt-2 border-t border-blue-800' : 'text-gray-300'}`}>
+        <div className={`flex justify-between ${bold ? 'font-bold text-blue-600 dark:text-blue-400 text-base mt-2 pt-2 border-t border-blue-200 dark:border-blue-800' : 'text-gray-600 dark:text-gray-300'}`}>
             <span>{label}</span><span>{value}</span>
         </div>
     )
