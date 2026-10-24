@@ -10,7 +10,7 @@ import useLongPress from '../hooks/useLongPress'
 import ContextMenu from '../components/ContextMenu'
 import ConfirmModal from '../components/ConfirmModal'
 import {
-  Users, UserPlus, Search, SlidersHorizontal, ChevronRight, Plus, Bell
+  Users, UserPlus, Search, SlidersHorizontal, ChevronRight, Bell
 } from 'lucide-react'
 
 const AVATAR_COLORS = ['#F9C6D9', '#C9B8E8', '#FFE2A8', '#A8E0DE', '#B9E4C9', '#F7B9A6', '#B8D0F0']

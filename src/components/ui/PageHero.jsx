@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { ChevronLeft } from 'lucide-react'
 
 const HERO_GRADIENTS = {
@@ -7,6 +8,21 @@ const HERO_GRADIENTS = {
 }
 
 const DEFAULT_OVERLAP = 56
+
+// Curva inferior: radio elíptico (50% del ancho) para que el arco sea largo y suave.
+const CURVE_RADIUS = '50% 44px'
+
+// Pinta la barra de estado del móvil con el color superior del hero mientras
+// la pantalla está montada, y devuelve el color original al salir.
+function useStatusBarColor(color) {
+    useEffect(() => {
+        if (!color) return
+        const metas = [...document.querySelectorAll('meta[name="theme-color"]')]
+        const previous = metas.map(m => m.getAttribute('content'))
+        metas.forEach(m => m.setAttribute('content', color))
+        return () => metas.forEach((m, i) => m.setAttribute('content', previous[i]))
+    }, [color])
+}
 
 // Botón circular translúcido para usar dentro del hero (volver, editar, etc.)
 export function HeroButton({ onClick, children, label }) {
@@ -36,15 +52,18 @@ export default function PageHero({
     overlap = DEFAULT_OVERLAP,
     children,
 }) {
+    const background = HERO_GRADIENTS[gradient] || gradient
+    const topColor = background.match(/#[0-9a-f]{3,8}/i)?.[0]
+    useStatusBarColor(topColor)
+
     return (
-        <div
-            className="px-4 pt-6 rounded-b-[28px]"
-            style={{
-                background: HERO_GRADIENTS[gradient] || gradient,
-                paddingBottom: overlap + 16,
-            }}
-        >
-            <div className="flex items-center gap-3">
+        <>
+            {/* Cabecera sticky en color sólido: mantiene la barra de estado pintada
+                al hacer scroll, igual que los heros de las pantallas principales. */}
+            <div
+                className="sticky top-0 z-20 px-4 pt-6 pb-3 flex items-center gap-3"
+                style={{ background: topColor || background }}
+            >
                 {onBack && (
                     <HeroButton onClick={onBack} label="Volver">
                         <ChevronLeft size={20} />
@@ -56,8 +75,18 @@ export default function PageHero({
                 </div>
                 {actions && <div className="flex items-center gap-2 shrink-0">{actions}</div>}
             </div>
-            {children && <div className="mt-5">{children}</div>}
-        </div>
+            <div
+                className="px-4 pt-2"
+                style={{
+                    background,
+                    paddingBottom: overlap + 24,
+                    borderBottomLeftRadius: CURVE_RADIUS,
+                    borderBottomRightRadius: CURVE_RADIUS,
+                }}
+            >
+                {children}
+            </div>
+        </>
     )
 }
 

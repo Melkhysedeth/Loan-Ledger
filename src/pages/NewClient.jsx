@@ -34,7 +34,7 @@ export default function NewClient() {
       supabase.from('clients').select('*').eq('id', id).single()
         .then(({ data }) => { if (data) setForm(data) })
     }
-  }, [id])
+  }, [id, isEditing, clearPersisted])
 
   function handleChange(e) {
     setForm({ ...form, [e.target.name]: e.target.value })

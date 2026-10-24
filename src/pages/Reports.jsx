@@ -5,7 +5,7 @@ import { formatCOP } from '../utils/format'
 import { monthStart, pendingOf } from '../utils/accounting'
 import { groupBy } from '../utils/loanMetrics'
 import {
-    ChevronLeft, TrendingUp, AlertCircle, AlertTriangle, Percent, BarChart2,
+    ChevronLeft, TrendingUp, AlertTriangle, Percent, BarChart2,
     BarChart3, Banknote, ChevronRight, ChevronDown, X, DollarSign, Clock,
     Users, UserRound, Calendar
 } from 'lucide-react'
@@ -16,76 +16,77 @@ export default function Reports() {
     const [stats, setStats] = useState(null)
     const [showWithdrawHistory, setShowWithdrawHistory] = useState(false)
 
-    useEffect(() => { load() }, [])
+    useEffect(() => {
+        async function load() {
+            const [{ data: loans }, { data: payments }, { data: clients }, { data: withdrawals }] = await Promise.all([
+                supabase.from('loans').select('id, amount, interest_rate, interest_type, initial_capital_paid, status, created_at'),
+                supabase.from('payments').select('loan_id, total_paid, interest_paid, capital_paid, date').eq('voided', false),
+                supabase.from('clients').select('id'),
+                supabase.from('capital_withdrawals').select('amount, date, notes, is_transfer').order('date', { ascending: false }),
+            ])
 
-    async function load() {
-        const [{ data: loans }, { data: payments }, { data: clients }, { data: withdrawals }] = await Promise.all([
-            supabase.from('loans').select('id, amount, interest_rate, interest_type, initial_capital_paid, status, created_at'),
-            supabase.from('payments').select('loan_id, total_paid, interest_paid, capital_paid, date').eq('voided', false),
-            supabase.from('clients').select('id'),
-            supabase.from('capital_withdrawals').select('amount, date, notes, is_transfer').order('date', { ascending: false }),
-        ])
+            const activeLoans = (loans || []).filter(l => ['active', 'frozen', 'agreement'].includes(l.status))
+            const overdueLoans = (loans || []).filter(l => l.status === 'overdue')
+            const allPayments = payments || []
+            const allWithdrawals = (withdrawals || []).filter(w => !w.is_transfer)
 
-        const activeLoans = (loans || []).filter(l => ['active', 'frozen', 'agreement'].includes(l.status))
-        const overdueLoans = (loans || []).filter(l => l.status === 'overdue')
-        const allPayments = payments || []
-        const allWithdrawals = (withdrawals || []).filter(w => !w.is_transfer)
+            const capitalRetirado = allWithdrawals.reduce((s, w) => s + (w.amount || 0), 0)
+            const retirosCount = allWithdrawals.length
+            const lastWithdrawal = allWithdrawals[0] || null
 
-        const capitalRetirado = allWithdrawals.reduce((s, w) => s + (w.amount || 0), 0)
-        const retirosCount = allWithdrawals.length
-        const lastWithdrawal = allWithdrawals[0] || null
+            const capitalActivo = [...activeLoans, ...overdueLoans].reduce((s, l) => s + (l.amount || 0), 0) - capitalRetirado
+            const paymentsByLoan = groupBy(allPayments, 'loan_id')
+            // Capital en mora = lo que realmente falta por pagar de los préstamos vencidos (no el monto original)
+            const capitalEnMora = overdueLoans.reduce((s, l) => s + pendingOf(l, paymentsByLoan.get(l.id) || []), 0)
+            const gananciaTotal = allPayments.reduce((s, p) => s + (p.interest_paid || 0), 0)
 
-        const capitalActivo = [...activeLoans, ...overdueLoans].reduce((s, l) => s + (l.amount || 0), 0) - capitalRetirado
-        const paymentsByLoan = groupBy(allPayments, 'loan_id')
-        // Capital en mora = lo que realmente falta por pagar de los préstamos vencidos (no el monto original)
-        const capitalEnMora = overdueLoans.reduce((s, l) => s + pendingOf(l, paymentsByLoan.get(l.id) || []), 0)
-        const gananciaTotal = allPayments.reduce((s, p) => s + (p.interest_paid || 0), 0)
+            const startOfMonth = monthStart()
+            const pagosEsteMes = allPayments
+                .filter(p => p.date >= startOfMonth)
+                .reduce((s, p) => s + (p.interest_paid || 0), 0)
 
-        const startOfMonth = monthStart()
-        const pagosEsteMes = allPayments
-            .filter(p => p.date >= startOfMonth)
-            .reduce((s, p) => s + (p.interest_paid || 0), 0)
+            // Los congelados no generan interés: no entran en la tasa promedio ni en la proyección.
+            const allActiveForRate = [...activeLoans, ...overdueLoans].filter(l => l.status !== 'frozen')
+            // Base sobre la que se genera el interés: fijo = monto original, variable = saldo pendiente.
+            const incomeBase = (l) => l.interest_type === 'variable'
+                ? pendingOf(l, paymentsByLoan.get(l.id) || [])
+                : (l.amount || 0)
+            const tasaPromedio = allActiveForRate.length > 0
+                ? allActiveForRate.reduce((s, l) => s + (l.interest_rate || 0), 0) / allActiveForRate.length
+                : 0
 
-        // Los congelados no generan interés: no entran en la tasa promedio ni en la proyección.
-        const allActiveForRate = [...activeLoans, ...overdueLoans].filter(l => l.status !== 'frozen')
-        // Base sobre la que se genera el interés: fijo = monto original, variable = saldo pendiente.
-        const incomeBase = (l) => l.interest_type === 'variable'
-            ? pendingOf(l, paymentsByLoan.get(l.id) || [])
-            : (l.amount || 0)
-        const tasaPromedio = allActiveForRate.length > 0
-            ? allActiveForRate.reduce((s, l) => s + (l.interest_rate || 0), 0) / allActiveForRate.length
-            : 0
+            const byRate = {}
+            allActiveForRate.forEach(l => {
+                const key = `${l.interest_rate}%`
+                if (!byRate[key]) byRate[key] = { count: 0, totalAmount: 0, rate: l.interest_rate }
+                byRate[key].count++
+                byRate[key].totalAmount += incomeBase(l)
+            })
+            const rateGroups = Object.entries(byRate)
+                .map(([label, v]) => ({
+                    label,
+                    count: v.count,
+                    monthlyIncome: Math.round(v.totalAmount * (v.rate / 100)),
+                    rate: v.rate,
+                }))
+                .sort((a, b) => a.rate - b.rate)
 
-        const byRate = {}
-        allActiveForRate.forEach(l => {
-            const key = `${l.interest_rate}%`
-            if (!byRate[key]) byRate[key] = { count: 0, totalAmount: 0, rate: l.interest_rate }
-            byRate[key].count++
-            byRate[key].totalAmount += incomeBase(l)
-        })
-        const rateGroups = Object.entries(byRate)
-            .map(([label, v]) => ({
-                label,
-                count: v.count,
-                monthlyIncome: Math.round(v.totalAmount * (v.rate / 100)),
-                rate: v.rate,
-            }))
-            .sort((a, b) => a.rate - b.rate)
+            const proyeccion = rateGroups.reduce((s, g) => s + g.monthlyIncome, 0)
+            const totalCapital = capitalActivo
+            const margen = totalCapital > 0 ? ((pagosEsteMes / totalCapital) * 100) : 0
 
-        const proyeccion = rateGroups.reduce((s, g) => s + g.monthlyIncome, 0)
-        const totalCapital = capitalActivo
-        const margen = totalCapital > 0 ? ((pagosEsteMes / totalCapital) * 100) : 0
-
-        setStats({
-            gananciaTotal, pagosEsteMes, capitalActivo, capitalEnMora,
-            capitalRetirado, retirosCount, lastWithdrawal, withdrawals: allWithdrawals,
-            activeCount: activeLoans.length,
-            overdueCount: overdueLoans.length,
-            clientCount: (clients || []).length,
-            tasaPromedio, margen, proyeccion, rateGroups,
-        })
-        setLoading(false)
-    }
+            setStats({
+                gananciaTotal, pagosEsteMes, capitalActivo, capitalEnMora,
+                capitalRetirado, retirosCount, lastWithdrawal, withdrawals: allWithdrawals,
+                activeCount: activeLoans.length,
+                overdueCount: overdueLoans.length,
+                clientCount: (clients || []).length,
+                tasaPromedio, margen, proyeccion, rateGroups,
+            })
+            setLoading(false)
+        }
+        load()
+    }, [])
 
     if (loading) return (
         <div className="flex items-center justify-center h-64">

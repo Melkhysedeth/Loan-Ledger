@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useAuth } from '../context/AuthContext'
+import { useAuth } from '../context/useAuth'
 import { formatCOP } from '../utils/format'
 import { useDashboardData } from '../hooks/useDashboardData'
 import PaymentDetailModal from '../components/PaymentDetailModal'

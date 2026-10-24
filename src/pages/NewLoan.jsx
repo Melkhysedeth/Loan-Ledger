@@ -19,6 +19,29 @@ const initialLoan = {
     interestType: 'fixed',
 }
 
+// Campos del formulario a partir de un préstamo existente (modo edición)
+function loanFormFrom(editLoan) {
+    return {
+        amount: editLoan.amount ? formatCOP(editLoan.amount) : '',
+        rate: editLoan.interest_rate?.toString() || '',
+        frequency: editLoan.frequency || 'mensual',
+        startDate: editLoan.start_date || '',
+        firstPaymentDate: editLoan.first_payment_date || '',
+        notes: editLoan.notes || '',
+        interestType: editLoan.interest_type || 'fixed',
+    }
+}
+
+// Cliente seleccionado guardado en sessionStorage (solo aplica al crear)
+function savedClient() {
+    try {
+        const saved = sessionStorage.getItem(SELECTED_CLIENT_KEY)
+        return saved ? JSON.parse(saved) : null
+    } catch {
+        return null
+    }
+}
+
 // Estado del cliente seleccionado también se persiste por separado
 // porque es un objeto, no un campo de texto
 const SELECTED_CLIENT_KEY = 'new-loan-client'
@@ -33,8 +56,8 @@ export default function NewLoan() {
     const [query, setQuery] = useState('')
     const [results, setResults] = useState([])
     const [searched, setSearched] = useState(false)
-    const [selectedClient, setSelectedClient] = useState(null)
-    const [loan, setLoan] = useState(initialLoan)
+    const [selectedClient, setSelectedClient] = useState(() => isEditing ? null : savedClient())
+    const [loan, setLoan] = useState(() => editLoan ? loanFormFrom(editLoan) : initialLoan)
     const [saving, setSaving] = useState(false)
     const [methodAmounts, setMethodAmounts] = useState({ efectivo: '', nequi: '', breb: '' })
     // Solo al editar: desglose actual por billetera, pagos ya hechos y cómo aplicar el interés nuevo
@@ -73,28 +96,9 @@ export default function NewLoan() {
         { empty: initialLoan, skip: isEditing }
     )
 
-    // Restaurar cliente seleccionado desde sessionStorage (solo si NO estamos editando)
-    useEffect(() => {
-        if (isEditing) return
-        try {
-            const saved = sessionStorage.getItem(SELECTED_CLIENT_KEY)
-            if (saved) setSelectedClient(JSON.parse(saved))
-        } catch { /* noop */ }
-    }, [])
-
-    // Precargar formulario si venimos en modo edición
+    // Modo edición: traer pagos, desglose por billetera y cliente del préstamo
     useEffect(() => {
         if (!editLoan) return
-
-        setLoan({
-            amount: editLoan.amount ? formatCOP(editLoan.amount) : '',
-            rate: editLoan.interest_rate?.toString() || '',
-            frequency: editLoan.frequency || 'mensual',
-            startDate: editLoan.start_date || '',
-            firstPaymentDate: editLoan.first_payment_date || '',
-            notes: editLoan.notes || '',
-            interestType: editLoan.interest_type || 'fixed',
-        })
 
         supabase.from('payments').select('capital_paid, voided').eq('loan_id', editLoan.id)
             .then(({ data }) => {
@@ -135,22 +139,29 @@ export default function NewLoan() {
                     }
                 })
         }
-    }, [])
+    }, [searchParams])
 
     // Búsqueda con debounce
     useEffect(() => {
-        if (query.trim().length < 2) { setResults([]); setSearched(false); return }
+        if (query.trim().length < 2) return
+        let cancelled = false
         const timer = setTimeout(async () => {
             const { data } = await supabase
                 .from('clients')
                 .select('*')
                 .or(`name.ilike.%${query}%,cedula.ilike.%${query}%`)
                 .limit(10)
+            if (cancelled) return
             setResults(data || [])
             setSearched(true)
         }, 300)
-        return () => clearTimeout(timer)
+        return () => { cancelled = true; clearTimeout(timer) }
     }, [query])
+
+    function changeQuery(value) {
+        setQuery(value)
+        if (value.trim().length < 2) { setResults([]); setSearched(false) }
+    }
 
     function selectClient(client) {
         setSelectedClient(client)
@@ -344,7 +355,7 @@ export default function NewLoan() {
                             className="w-full border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 rounded-xl px-3 py-2 text-gray-800 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                             placeholder="Buscar por nombre o cédula..."
                             value={query}
-                            onChange={e => setQuery(e.target.value)}
+                            onChange={e => changeQuery(e.target.value)}
                         />
                         {results.length > 0 && (
                             <ul className="mt-2 border border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-xl overflow-hidden shadow-sm">

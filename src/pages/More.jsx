@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Sun, Moon, Info, Download, LogOut, ChevronRight, Smartphone, BarChart2 } from 'lucide-react'
 import { supabase } from '../db/supabase'
-import { useAuth } from '../context/AuthContext'
+import { useAuth } from '../context/useAuth'
 
 const APP_VERSION = '2.0.0'
 

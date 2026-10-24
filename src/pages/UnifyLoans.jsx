@@ -26,38 +26,39 @@ export default function UnifyLoans() {
     const [firstPaymentDate, setFirstPaymentDate] = useState('')
     const [notes, setNotes] = useState('')
 
-    useEffect(() => { load() }, [id])
-
-    async function load() {
-        setLoading(true)
-        const { data: c } = await supabase.from('clients').select('*').eq('id', id).single()
-        const { data: l } = await supabase
-            .from('loans')
-            .select('*')
-            .eq('client_id', id)
-            .in('status', ELIGIBLE_STATUSES)
-            .order('created_at', { ascending: false })
-
-        setClient(c)
-        setLoans(l || [])
-
-        if (l && l.length > 0) {
-            const { data: p } = await supabase
-                .from('payments')
+    useEffect(() => {
+        async function load() {
+            setLoading(true)
+            const { data: c } = await supabase.from('clients').select('*').eq('id', id).single()
+            const { data: l } = await supabase
+                .from('loans')
                 .select('*')
-                .in('loan_id', l.map(loan => loan.id))
-                .eq('voided', false)
+                .eq('client_id', id)
+                .in('status', ELIGIBLE_STATUSES)
+                .order('created_at', { ascending: false })
 
-            const grouped = {}
-            for (const pay of (p || [])) {
-                if (!grouped[pay.loan_id]) grouped[pay.loan_id] = []
-                grouped[pay.loan_id].push(pay)
+            setClient(c)
+            setLoans(l || [])
+
+            if (l && l.length > 0) {
+                const { data: p } = await supabase
+                    .from('payments')
+                    .select('*')
+                    .in('loan_id', l.map(loan => loan.id))
+                    .eq('voided', false)
+
+                const grouped = {}
+                for (const pay of (p || [])) {
+                    if (!grouped[pay.loan_id]) grouped[pay.loan_id] = []
+                    grouped[pay.loan_id].push(pay)
+                }
+                setPaymentsByLoan(grouped)
             }
-            setPaymentsByLoan(grouped)
-        }
 
-        setLoading(false)
-    }
+            setLoading(false)
+        }
+        load()
+    }, [id])
 
     function toggle(loanId) {
         const next = new Set(selected)

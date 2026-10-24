@@ -32,49 +32,50 @@ export default function Collections() {
     const [loading, setLoading] = useState(true)
     const [collectedThisMonth, setCollectedThisMonth] = useState(0)
 
-    useEffect(() => { load() }, [])
+    useEffect(() => {
+        async function load() {
+            setLoading(true)
 
-    async function load() {
-        setLoading(true)
+            const [{ data: allLoans }, { data: allClients }, { data: allPayments }] = await Promise.all([
+                supabase.from('loans').select('*'),
+                supabase.from('clients').select('*'),
+                supabase.from('payments').select('*'),
+            ])
 
-        const [{ data: allLoans }, { data: allClients }, { data: allPayments }] = await Promise.all([
-            supabase.from('loans').select('*'),
-            supabase.from('clients').select('*'),
-            supabase.from('payments').select('*'),
-        ])
+            setCollectedThisMonth(collectedSince(allPayments || [], monthStart()))
 
-        setCollectedThisMonth(collectedSince(allPayments || [], monthStart()))
+            const activeLoans = (allLoans || []).filter(l =>
+                l.status === 'active' || l.status === 'overdue' || l.status === 'agreement'
+            )
 
-        const activeLoans = (allLoans || []).filter(l =>
-            l.status === 'active' || l.status === 'overdue' || l.status === 'agreement'
-        )
+            const result = { overdue: [], today: [], soon: [] }
 
-        const result = { overdue: [], today: [], soon: [] }
+            for (const loan of activeLoans) {
+                if (!loan.first_payment_date) continue
+                const loanPayments = activePayments((allPayments || []).filter(p => p.loan_id === loan.id))
+                const paymentsMade = installmentsMade(loanPayments)
+                const classification = classifyLoan(loan.first_payment_date, loan.frequency, paymentsMade)
+                if (!result[classification]) continue
 
-        for (const loan of activeLoans) {
-            if (!loan.first_payment_date) continue
-            const loanPayments = activePayments((allPayments || []).filter(p => p.loan_id === loan.id))
-            const paymentsMade = installmentsMade(loanPayments)
-            const classification = classifyLoan(loan.first_payment_date, loan.frequency, paymentsMade)
-            if (!result[classification]) continue
+                const client = (allClients || []).find(c => c.id === loan.client_id)
+                const nextPayment = calcNextPaymentDate(loan.first_payment_date, loan.frequency, paymentsMade)
 
-            const client = (allClients || []).find(c => c.id === loan.client_id)
-            const nextPayment = calcNextPaymentDate(loan.first_payment_date, loan.frequency, paymentsMade)
+                // Interés a cobrar: el mismo cálculo de PaymentScreen (variable sobre saldo, saldo de interés
+                // pendiente/a favor, acuerdos en 0). Si está atrasado, se multiplican los períodos en mora.
+                const { carryover, nextBaseInterest } = calcInterestCarryover(loan, loanPayments)
+                const periods = classification === 'overdue'
+                    ? Math.max(1, calcMora(loan, paymentsMade, loanCapitalPaid(loan, loanPayments)).periodosEnMora)
+                    : 1
+                const interestDue = Math.max(0, nextBaseInterest * periods + carryover)
 
-            // Interés a cobrar: el mismo cálculo de PaymentScreen (variable sobre saldo, saldo de interés
-            // pendiente/a favor, acuerdos en 0). Si está atrasado, se multiplican los períodos en mora.
-            const { carryover, nextBaseInterest } = calcInterestCarryover(loan, loanPayments)
-            const periods = classification === 'overdue'
-                ? Math.max(1, calcMora(loan, paymentsMade, loanCapitalPaid(loan, loanPayments)).periodosEnMora)
-                : 1
-            const interestDue = Math.max(0, nextBaseInterest * periods + carryover)
+                result[classification].push({ ...loan, client, nextPayment, paymentsMade, interestDue, periodInterest: nextBaseInterest, periods })
+            }
 
-            result[classification].push({ ...loan, client, nextPayment, paymentsMade, interestDue, periodInterest: nextBaseInterest, periods })
+            setGrouped(result)
+            setLoading(false)
         }
-
-        setGrouped(result)
-        setLoading(false)
-    }
+        load()
+    }, [])
 
     const total = Object.values(grouped).reduce((s, arr) => s + arr.length, 0)
 

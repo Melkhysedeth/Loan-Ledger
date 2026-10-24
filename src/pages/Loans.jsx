@@ -3,14 +3,13 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "../db/supabase";
 import { formatCOP } from "../utils/format";
 import { calcNextPaymentDate, classifyLoan } from "../utils/loanCalc";
-import { installmentsMade, groupBy } from "../utils/loanMetrics";
-import { totalLentOf, pendingOf, pendingBalanceOf } from "../utils/accounting";
+import { installmentsMade } from "../utils/loanMetrics";
+import { totalLentOf, pendingOf } from "../utils/accounting";
 import {
   Search,
   AlertCircle,
   Clock,
   CheckCircle,
-  CreditCard,
   Calendar,
   Plus,
   Bell,
@@ -187,7 +186,6 @@ export default function Loans() {
     ["active", "overdue", "frozen", "agreement"].includes(l.status),
   );
   const totalLent = totalLentOf(activeLoans, withdrawals);
-  const totalPending = pendingBalanceOf(activeLoans, groupBy(payments, "loan_id"));
   const overdueCount = loans.filter((l) => l.status === "overdue").length;
 
   const filtered = loans.filter((l) => {
@@ -324,7 +322,6 @@ export default function Loans() {
 
 function LoanCard({ loan, index, payments, onPress, onEdit, onDeleted, even }) {
   const cfg = STATUS_CONFIG[loan.status] || STATUS_CONFIG.active;
-  const { Icon } = cfg;
   const name = loan.client?.name || "Cliente";
   const phone = loan.client?.phone || "";
   const [menuOpen, setMenuOpen] = useState(false);

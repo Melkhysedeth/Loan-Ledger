@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useMemo } from 'react'
 import { Pencil, Trash2 } from 'lucide-react'
 
 const MENU_WIDTH = 200
@@ -16,10 +16,9 @@ const MARGIN = 8
  *  - onClose: () => void
  */
 export default function ContextMenu({ open, anchorRect, onEdit, onDelete, onClose }) {
-    const [style, setStyle] = useState(null)
-
-    useEffect(() => {
-        if (!open || !anchorRect) return
+    // Posición del menú calculada a partir de la card; se recalcula solo al abrir o cambiar de card
+    const style = useMemo(() => {
+        if (!open || !anchorRect) return null
 
         const viewportW = window.innerWidth
         const viewportH = window.innerHeight
@@ -37,7 +36,7 @@ export default function ContextMenu({ open, anchorRect, onEdit, onDelete, onClos
             ? anchorRect.top - menuHeightEstimate - MARGIN
             : anchorRect.bottom + MARGIN
 
-        setStyle({ left, top, transformOrigin: placeAbove ? 'bottom center' : 'top center' })
+        return { left, top, transformOrigin: placeAbove ? 'bottom center' : 'top center' }
     }, [open, anchorRect])
 
     if (!open || !style) return null

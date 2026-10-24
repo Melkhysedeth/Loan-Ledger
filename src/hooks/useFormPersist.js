@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useCallback, useEffect, useEffectEvent } from 'react'
 
 /**
  * Persiste el estado de un formulario en sessionStorage.
@@ -13,8 +13,7 @@ import { useEffect } from 'react'
  */
 export function useFormPersist(key, values, setValues, { empty = {}, exclude = [], skip = false } = {}) {
 
-    // Al montar: restaurar si hay datos guardados
-    useEffect(() => {
+    const restore = useEffectEvent(() => {
         if (skip) return
         try {
             const saved = sessionStorage.getItem(key)
@@ -28,10 +27,9 @@ export function useFormPersist(key, values, setValues, { empty = {}, exclude = [
         } catch {
             // sessionStorage bloqueado o JSON inválido, ignorar
         }
-    }, []) // solo al montar
+    })
 
-    // Al cambiar valores: guardar (excluyendo campos sensibles)
-    useEffect(() => {
+    const save = useEffectEvent(values => {
         if (skip) return
         try {
             const toSave = Object.fromEntries(
@@ -46,12 +44,18 @@ export function useFormPersist(key, values, setValues, { empty = {}, exclude = [
         } catch {
             // sessionStorage lleno o bloqueado, ignorar
         }
-    }, [values, skip])
+    })
+
+    // Al montar: restaurar si hay datos guardados
+    useEffect(() => { restore() }, [])
+
+    // Al cambiar valores: guardar (excluyendo campos sensibles)
+    useEffect(() => { save(values) }, [values, skip])
 
     // Función para limpiar manualmente (llamar al guardar con éxito)
-    function clearPersisted() {
+    const clearPersisted = useCallback(() => {
         try { sessionStorage.removeItem(key) } catch { /* noop */ }
-    }
+    }, [key])
 
     return { clearPersisted }
 }

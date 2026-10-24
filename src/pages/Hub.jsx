@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../db/supabase'
-import { useAuth } from '../context/AuthContext'
+import { useAuth } from '../context/useAuth'
 import { formatCOP } from '../utils/format'
 import { classifyLoan } from '../utils/loanCalc'
 import { activePayments, groupBy, installmentsMade } from '../utils/loanMetrics'

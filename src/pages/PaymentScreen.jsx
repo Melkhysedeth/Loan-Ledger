@@ -91,27 +91,25 @@ export default function PaymentScreen() {
   const [waModal, setWaModal] = useState({ open: false, phone: '', message: '' })
 
   useEffect(() => {
+    async function load() {
+      const [{ data: l }, { data: p }] = await Promise.all([
+        supabase.from("loans").select("*").eq("id", id).single(),
+        supabase.from("payments").select("*").eq("loan_id", id),
+      ]);
+      if (!l) return;
+      const { data: c } = await supabase
+        .from("clients")
+        .select("*")
+        .eq("id", l.client_id)
+        .single();
+      setLoan(l);
+      setClient(c);
+      setPayments(p || []);
+      // Interés sugerido para el próximo pago
+      setInterestInput(formatCOP(calcInterestCarryover(l, p || []).nextExpectedInterest));
+    }
     load();
   }, [id]);
-  useEffect(() => {
-    if (loan) setInterestInput(formatCOP(nextExpectedInterest));
-  }, [loan?.id, payments.length]);
-
-  async function load() {
-    const [{ data: l }, { data: p }] = await Promise.all([
-      supabase.from("loans").select("*").eq("id", id).single(),
-      supabase.from("payments").select("*").eq("loan_id", id),
-    ]);
-    if (!l) return;
-    const { data: c } = await supabase
-      .from("clients")
-      .select("*")
-      .eq("id", l.client_id)
-      .single();
-    setLoan(l);
-    setClient(c);
-    setPayments(p || []);
-  }
 
   if (!loan || !client)
     return (
